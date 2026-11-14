@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ms">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#173b65"><meta name="description" content="MySemester - Student Academic Management System">
+<link rel="manifest" href="manifest.json"><link rel="stylesheet" href="assets/style.css">
+<title>MySemester</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="config.js"></script>
+</head>
+<body>
+<header class="topbar"><div class="brand"><span class="brand-icon">M</span><div><b>MySemester</b><small>Student Academic Management</small></div></div><div id="profile" class="profile hidden"></div></header>
+<main class="container">
+<section id="loginView" class="login-card">
+ <div class="hero-icon">🎓</div><h1>Urus semester anda dengan lebih teratur.</h1>
+ <p>Jadual kelas, tugasan PB, nota dan tarikh penting dalam satu tempat.</p>
+ <div id="googleButton"></div><p class="muted small">Log masuk menggunakan akaun Google. Selepas log masuk, masukkan kod jemputan kelas.</p>
+ <div id="loginError" class="error"></div>
+</section>
+<section id="appView" class="hidden">
+ <div class="welcome"><div><span class="eyebrow">STUDENT WORKSPACE</span><h1 id="welcomeName">Dashboard</h1><p id="welcomeEmail" class="muted"></p></div><button id="logoutBtn" class="btn btn-light">Log keluar</button></div>
+ <div id="noClass" class="panel hidden"><h2>Sertai kelas</h2><p class="muted">Masukkan kod jemputan yang diberikan oleh wakil kelas atau pentadbir.</p><div class="inline-form"><input id="inviteCode" placeholder="Contoh: RBT26ABCD"><button id="joinBtn" class="btn">Sertai kelas</button></div><div id="joinMessage" class="small"></div></div>
+ <div id="classArea" class="hidden">
+  <div class="class-head panel"><div><span class="eyebrow">KELAS AKTIF</span><h2 id="className"></h2><p id="classCode" class="muted"></p></div><span class="pill">Ahli kelas</span></div>
+  <nav class="tabs"><button class="tab active" data-tab="overview">Ringkasan</button><button class="tab" data-tab="schedule">Jadual</button><button class="tab" data-tab="assignments">Tugasan PB</button></nav>
+  <section id="tab-overview" class="tab-content"><div class="stats"><article class="stat"><span>Subjek</span><b id="subjectCount">—</b></article><article class="stat"><span>Tugasan PB</span><b id="assignmentCount">—</b></article><article class="stat"><span>Jadual</span><b id="scheduleCount">—</b></article></div><div class="panel"><h3>Maklumat semester</h3><p class="muted">Data akademik kelas akan dipaparkan di sini apabila semester dan subjek telah dikonfigurasi.</p></div></section>
+  <section id="tab-schedule" class="tab-content hidden"><div class="panel"><h3>Jadual kelas</h3><div id="scheduleList" class="list"><p class="muted">Pilih semester untuk memaparkan jadual.</p></div></div></section>
+  <section id="tab-assignments" class="tab-content hidden"><div class="panel"><h3>Penilaian Berterusan</h3><div id="assignmentList" class="list"><p class="muted">Senarai PB akan dipaparkan di sini.</p></div></div></section>
+ </div>
+</section>
+</main>
+<footer>MySemester • Asia/Kuala_Lumpur • Academic information workspace</footer>
+<iframe name="apiFrame" id="apiFrame" class="hidden"></iframe>
+<script src="assets/app.js"></script>
+</body></html>
