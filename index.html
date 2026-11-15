@@ -7,6 +7,15 @@
 <title>MySemester</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="config.js"></script>
+<style>
+.role-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:8px}
+.role-preview-card{display:flex;flex-direction:column;align-items:flex-start;gap:5px;padding:14px;border:1px solid #d7e0ec;border-radius:12px;background:#fff;color:#173b65;cursor:pointer;text-align:left}
+.role-preview-card.selected{border:2px solid #2563eb;background:#eff6ff;box-shadow:0 0 0 2px #dbeafe}
+.role-preview-icon{font-size:22px}.role-preview-card small{color:#64748b}
+.preview-data-row{display:flex;flex-direction:column;gap:4px;padding:12px 0;border-bottom:1px solid #e2e8f0}
+.preview-data-row small{color:#64748b}\n.preview-capabilities{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}\n.preview-capabilities span{padding:6px 9px;border-radius:8px;background:#f1f5f9;font-size:13px}
+@media(max-width:700px){.role-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
 </head>
 <body>
 <header class="topbar"><div class="brand"><span class="brand-icon">M</span><div><b>MySemester</b><small>Student Academic Management</small></div></div><div id="profile" class="profile hidden"></div></header>
@@ -102,7 +111,7 @@
         <div class="form-stack preview-form">
           <label>Kelas <select id="previewClass"></select></label>
           <div><span class="label-text">Peranan</span><div id="roleCards" class="role-cards"></div></div>
-          <button id="startPreviewBtn" class="btn">Mulakan pratonton</button>
+          <button id="startPreviewBtn" class="btn" type="button">Mulakan pratonton</button>
           <div id="previewMessage" class="small form-message"></div>
         </div>
         <div class="preview-rules">
@@ -142,7 +151,7 @@
       <div><strong>🔍 Mod pratonton</strong> <span id="previewInfo"></span></div>
       <div class="preview-actions">
         <label class="small">Peranan <select id="previewRoleSwitch"></select></label>
-        <label class="small check"><input type="checkbox" id="previewCommit"> Simpan perubahan kelas sebenar</label>
+        <label class="small check"><input type="checkbox" id="previewCommit" disabled> Simpan perubahan kelas sebenar (tidak tersedia dalam Safe Preview)</label>
         <button id="exitPreviewBtn" class="btn btn-small">Keluar pratonton</button>
       </div>
     </div>
