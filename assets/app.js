@@ -1,5 +1,8 @@
-console.log('MySemester app.js v1.2 (top-postMessage fix) loaded');
+console.log('MySemester app.js v1.3 (Development Mode + workspace performance) loaded');
 let idToken = null;
+let devToken = null;
+const LOGIN_MODE = String((typeof MYSEMESTER_CONFIG !== 'undefined' && MYSEMESTER_CONFIG.LOGIN_MODE) || 'manual').toLowerCase();
+let rolePreviewStarting = false;
 let currentUser = null;
 let authenticatedUser = null;
 let currentClass = null;
@@ -45,60 +48,75 @@ function initializeGoogleSignIn() {
   });
 }
 window.addEventListener('load', () => {
-  let attempts=0;
-  const timer=setInterval(()=>{
-    attempts++;
-    if(window.google?.accounts?.id){clearInterval(timer);initializeGoogleSignIn();}
-    else if(attempts>=20){clearInterval(timer);setError('Tidak dapat memuatkan Google Sign-In. Semak sambungan internet.');}
-  },250);
+  const manual=LOGIN_MODE==='manual';
+  show('#manualLoginForm',manual);
+  show('#googleLoginPanel',!manual);
+  if(manual) return; // Google Identity Services is not even requested in manual development mode.
+  const script=document.createElement('script');
+  script.src='https://accounts.google.com/gsi/client';
+  script.async=true;script.defer=true;
+  script.onload=initializeGoogleSignIn;
+  script.onerror=()=>setError('Tidak dapat memuatkan Google Sign-In. Semak sambungan internet.');
+  document.head.appendChild(script);
 });
 
+async function completeLogin(result) {
+  currentUser=result.user;
+  authenticatedUser=result.user;
+  $('#welcomeName').textContent='Selamat datang, '+(currentUser.name||'pengguna');
+  $('#welcomeEmail').textContent=currentUser.email;
+  $('#profile').textContent=currentUser.email+(result.isSystemAdmin?' • SYSTEM ADMIN':'');
+  show('#loginView',false);
+  show('#appView',true);
+  if(result.isSystemAdmin || result.workspace==='system_admin') {
+    show('#adminView',true);
+    show('#studentView',false);
+    $('#adminWelcomeName').textContent=currentUser.name||currentUser.email;
+    $('#adminWelcomeEmail').textContent=currentUser.email;
+    await loadAdminDashboard();
+  } else {
+    show('#adminView',false);
+    show('#studentView',true);
+    if(result.classes && result.classes.length) {
+      currentClass=result.classes[0];
+      $('#className').textContent=currentClass.className;
+      $('#classCode').textContent='Kod kelas: '+currentClass.classCode;
+      show('#classArea',true);show('#noClass',false);
+    } else {
+      show('#noClass',true);show('#classArea',false);
+    }
+  }
+}
 async function onGoogleCredential(response) {
   idToken=response.credential;
   setError('');
   $('#googleButton').classList.add('disabled');
-  try {
-    const result=await api('bootstrap',{});
-    currentUser=result.user;
-    authenticatedUser=result.user;
-    $('#welcomeName').textContent='Selamat datang, '+(currentUser.name||'pengguna');
-    $('#welcomeEmail').textContent=currentUser.email;
-    $('#profile').textContent=currentUser.email+(result.isSystemAdmin?' • SYSTEM ADMIN':'');
-    show('#loginView',false);
-    show('#appView',true);
-
-    if(result.isSystemAdmin || result.workspace==='system_admin') {
-      show('#adminView',true);
-      show('#studentView',false);
-      $('#adminWelcomeName').textContent=currentUser.name||currentUser.email;
-      $('#adminWelcomeEmail').textContent=currentUser.email;
-      await loadAdminDashboard();
-    } else {
-      show('#adminView',false);
-      show('#studentView',true);
-      if(result.classes && result.classes.length) {
-        currentClass=result.classes[0];
-        $('#className').textContent=currentClass.className;
-        $('#classCode').textContent='Kod kelas: '+currentClass.classCode;
-        show('#classArea',true);show('#noClass',false);
-      } else {
-        show('#noClass',true);show('#classArea',false);
-      }
-    }
-  } catch(error) {
-    idToken=null;
-    setError(error.message||'Log masuk berjaya tetapi sambungan MySemester gagal.');
-  } finally {
-    $('#googleButton').classList.remove('disabled');
-  }
+  try { await completeLogin(await api('bootstrap',{})); }
+  catch(error) { idToken=null;setError(error.message||'Log masuk gagal.'); }
+  finally { $('#googleButton').classList.remove('disabled'); }
 }
+$('#manualLoginForm')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const button=$('#manualLoginBtn');
+  button.disabled=true;button.textContent='Mengesahkan...';setError('');
+  try {
+    const result=await api('devLogin',{username:$('#manualUsername').value.trim(),password:$('#manualPassword').value});
+    devToken=result.devToken;
+    $('#manualPassword').value='';
+    await completeLogin(await api('bootstrap',{}));
+  } catch(error) {
+    devToken=null;setError(error.message||'Log masuk pembangunan gagal.');
+  } finally {
+    button.disabled=false;button.textContent='Log masuk Development Mode';
+  }
+});
 
 function api(action,data,testSessionToken) {
-  if(!idToken)return Promise.reject(new Error('Sila log masuk menggunakan Google dahulu.'));
+  if(action!=='devLogin' && !idToken && !devToken) return Promise.reject(new Error('Sila log masuk terlebih dahulu.'));
   const apiUrl=MYSEMESTER_CONFIG.APPS_SCRIPT_URL;
   if(!apiUrl||!apiUrl.endsWith('/exec'))return Promise.reject(new Error('URL Apps Script tidak sah. Gunakan URL /exec.'));
   const requestId='r'+Date.now().toString(36)+Math.random().toString(36).slice(2,15);
-  const payload={action,data,idToken,requestId};
+  const payload={action,data,idToken:idToken||'',devToken:devToken||'',requestId};
   if(testSessionToken) payload.testSessionToken=testSessionToken;
   const frame=document.getElementById('apiFrame');
 
@@ -180,6 +198,70 @@ function renderAdminUsers() {
     <tr><td>${escapeHtml(u.fullName||'—')}</td><td>${escapeHtml(u.email)}</td>
     <td><span class="status ${u.accountStatus==='active'?'active':'draft'}">${escapeHtml(u.accountStatus)}</span></td>
     <td>${escapeHtml(u.lastLogin||'—')}</td></tr>`).join(''):'<tr><td colspan="4">Belum ada pengguna.</td></tr>';
+}
+
+/* SYSTEM ADMIN DATA CRUD */
+let adminDataSchema=null, adminDataRows=[], adminDataSelected=null, adminDataMode='none';
+function adminDataMessage(message,isError=false){
+  const el=$('#adminDataMessage'); if(el){el.textContent=message||'';el.classList.toggle('error',!!isError);}
+}
+function renderAdminDataRows(){
+  const body=$('#adminDataList'); if(!body)return;
+  body.innerHTML=adminDataRows.length?adminDataRows.map(row=>{
+    const id=String(row[adminDataSchema.key]??'');
+    const summary=Object.entries(row).filter(([k,v])=>k!==adminDataSchema.key && v!=='' && v!==null && v!==undefined).slice(0,3).map(([k,v])=>`${k}: ${String(v).slice(0,70)}`).join(' · ');
+    return `<tr><td><code>${escapeHtml(id)}</code></td><td>${escapeHtml(summary||'—')}</td>
+      <td><button class="btn btn-small btn-light" type="button" data-admin-data-open="${escapeHtml(id)}">Buka</button></td></tr>`;
+  }).join(''):'<tr><td colspan="3" class="muted">Tiada rekod ditemui.</td></tr>';
+  $('#adminDataCount').textContent=`${adminDataRows.length} rekod dipaparkan daripada ${adminDataSchema?.total||0}`;
+}
+async function loadAdminDataTable(){
+  const table=$('#adminDataTable')?.value; if(!table)return;
+  adminDataMessage('Memuatkan rekod...');
+  try{
+    adminDataSchema=await api('adminListData',{table,search:$('#adminDataSearch')?.value||'',limit:250});
+    adminDataRows=adminDataSchema.records||[];
+    adminDataSelected=null; adminDataMode='none';
+    $('#adminDataJson').value='';
+    $('#adminDataMode').textContent='Tiada pilihan';
+    $('#adminDataDelete').disabled=true;
+    $('#adminDataEditorHint').textContent=`Kunci utama: ${adminDataSchema.key}. Medan tersedia: ${adminDataSchema.columns.join(', ')}`;
+    renderAdminDataRows(); adminDataMessage('Data berjaya dimuatkan.');
+  }catch(e){adminDataMessage(e.message,true);}
+}
+function startAdminDataNew(){
+  if(!adminDataSchema){adminDataMessage('Muatkan jadual dahulu.',true);return;}
+  const blank={}; adminDataSchema.columns.forEach(c=>blank[c]='');
+  $('#adminDataJson').value=JSON.stringify(blank,null,2);
+  adminDataSelected=null; adminDataMode='create';
+  $('#adminDataMode').textContent='Rekod baharu';
+  $('#adminDataDelete').disabled=true;
+  $('#adminDataEditorHint').textContent=`Isi ${adminDataSchema.key} dan medan yang diperlukan.`;
+  adminDataMessage('Mod cipta rekod baharu.');
+}
+async function saveAdminDataRecord(){
+  if(!adminDataSchema)return;
+  let record;
+  try{record=JSON.parse($('#adminDataJson').value);}catch(e){adminDataMessage('JSON tidak sah: '+e.message,true);return;}
+  if(!record||Array.isArray(record)||typeof record!=='object'){adminDataMessage('Rekod mesti objek JSON.',true);return;}
+  try{
+    if(adminDataMode==='create'){
+      await api('adminCreateData',{table:adminDataSchema.table,record});
+      adminDataMessage('Rekod berjaya dicipta.');
+    }else if(adminDataMode==='edit' && adminDataSelected){
+      const patch={...record}; delete patch[adminDataSchema.key];
+      await api('adminUpdateData',{table:adminDataSchema.table,id:adminDataSelected[adminDataSchema.key],patch});
+      adminDataMessage('Rekod berjaya dikemas kini.');
+    }else{adminDataMessage('Pilih rekod atau tekan Rekod baharu.',true);return;}
+    await loadAdminDataTable();
+  }catch(e){adminDataMessage(e.message,true);}
+}
+async function deleteAdminDataRecord(){
+  if(!adminDataSchema||!adminDataSelected)return;
+  const id=adminDataSelected[adminDataSchema.key];
+  if(!confirm(`Padam rekod ${id} daripada ${adminDataSchema.table}? Tindakan ini kekal.`))return;
+  try{await api('adminDeleteData',{table:adminDataSchema.table,id});adminDataMessage('Rekod berjaya dipadam.');await loadAdminDataTable();}
+  catch(e){adminDataMessage(e.message,true);}
 }
 function selectedClass() {
   return (adminData?.classes||[]).find(c=>c.classId===selectedAdminClassId)||null;
@@ -273,7 +355,24 @@ document.querySelectorAll('[data-admin-tab]').forEach(btn=>{
     document.querySelectorAll('[data-admin-tab]').forEach(x=>x.classList.toggle('active',x===btn));
     document.querySelectorAll('.admin-tab-panel').forEach(x=>x.classList.add('hidden'));
     $('#admin-panel-'+btn.dataset.adminTab).classList.remove('hidden');
+    if(btn.dataset.adminTab==='data') loadAdminDataTable();
   });
+});
+$('#adminDataLoad')?.addEventListener('click',loadAdminDataTable);
+$('#adminDataRefresh')?.addEventListener('click',loadAdminDataTable);
+$('#adminDataTable')?.addEventListener('change',loadAdminDataTable);
+$('#adminDataSearch')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();loadAdminDataTable();}});
+$('#adminDataNew')?.addEventListener('click',startAdminDataNew);
+$('#adminDataSave')?.addEventListener('click',saveAdminDataRecord);
+$('#adminDataDelete')?.addEventListener('click',deleteAdminDataRecord);
+$('#adminDataClear')?.addEventListener('click',()=>{adminDataSelected=null;adminDataMode='none';$('#adminDataJson').value='';$('#adminDataMode').textContent='Tiada pilihan';$('#adminDataDelete').disabled=true;adminDataMessage('Editor dikosongkan.');});
+$('#adminDataList')?.addEventListener('click',e=>{
+  const btn=e.target.closest('[data-admin-data-open]'); if(!btn)return;
+  const row=adminDataRows.find(x=>String(x[adminDataSchema.key])===btn.dataset.adminDataOpen); if(!row)return;
+  adminDataSelected=row;adminDataMode='edit';$('#adminDataJson').value=JSON.stringify(row,null,2);
+  $('#adminDataMode').textContent='Edit rekod';$('#adminDataDelete').disabled=false;
+  $('#adminDataEditorHint').textContent=`ID rekod: ${row[adminDataSchema.key]}. Jangan ubah kunci utama.`;
+  adminDataMessage('Rekod dimuatkan ke editor.');
 });
 
 
@@ -358,9 +457,14 @@ function selectedPreviewClass() {
   return (adminData?.classes||[]).find(c=>c.classId===$('#previewClass')?.value)||null;
 }
 async function startRolePreview(role) {
+  if(rolePreviewStarting) return;
+  rolePreviewStarting=true;
+  const startButton=$('#startPreviewBtn'), roleSwitch=$('#previewRoleSwitch');
+  if(startButton) startButton.disabled=true;
+  if(roleSwitch) roleSwitch.disabled=true;
   const classId=$('#previewClass').value;
   const selectedRole=role||selectedPreviewRole();
-  if(!classId) { $('#previewMessage').textContent='Sila pilih kelas terlebih dahulu.'; return; }
+  if(!classId) { $('#previewMessage').textContent='Sila pilih kelas terlebih dahulu.'; rolePreviewStarting=false;if(startButton)startButton.disabled=false;if(roleSwitch)roleSwitch.disabled=false;return; }
   $('#previewMessage').textContent='Mencipta akaun ujian sementara...';
   try {
     if(activeRoleTest) await stopActiveRoleTest(false);
@@ -390,20 +494,28 @@ async function startRolePreview(role) {
     activeRoleLabTab='dashboard';roleLabEditing=null;
     $('#previewMessage').textContent=result.message;
     await loadRoleTestContext();
-    await refreshRoleTestAudit();
     document.querySelectorAll('.student-tab').forEach((b,i)=>b.classList.toggle('active',i===0));
     document.querySelectorAll('.student-tab-content').forEach((el,i)=>el.classList.toggle('hidden',i!==0));
   } catch(error) {
     $('#previewMessage').textContent='Gagal memulakan ujian: '+error.message;
     if(!activeRoleTest) {
-      show('#studentView',false);show('#previewBanner',false);show('#previewTestConsole',false);show('#adminView',true);
+      show('#studentView',false);show('#previewBanner',false);show('#previewTestConsole',false);show('#roleLabWorkspace',false);show('#adminView',true);
     }
+  } finally {
+    rolePreviewStarting=false;
+    if(startButton) startButton.disabled=false;
+    if(roleSwitch) roleSwitch.disabled=false;
   }
 }
 async function loadRoleTestContext() {
   if(!activeRoleTest) return;
   try {
-    roleTestContextData=await api('roleTestContext',{},activeRoleTest.token);
+    const sessionSnapshot=activeRoleTest;
+    const context=await api('roleTestContext',{},sessionSnapshot.token);
+    if(!activeRoleTest || activeRoleTest.sessionId!==sessionSnapshot.sessionId) return;
+    if(context.role!==activeRoleTest.role || context.sessionId!==activeRoleTest.sessionId) throw new Error('Role context mismatch. Sila mulakan semula sesi ujian.');
+    roleTestContextData=context;
+    if($('#roleLabAudit')) $('#roleLabAudit').innerHTML=(context.auditLogs||[]).map(log=>`<div class="test-audit-item"><strong>${escapeHtml(log.role||context.role)} / ${escapeHtml(log.action)}</strong> — ${escapeHtml(log.result)}<small>${escapeHtml(log.created_at||'')} • ${escapeHtml(log.entity_type||'')}</small></div>`).join('')||'Belum ada aktiviti.';
     if(!activeTestSemesterId || !(roleTestContextData.semesters||[]).some(x=>x.semester_id===activeTestSemesterId)) {
       activeTestSemesterId=roleTestContextData.semesters?.[0]?.semester_id||null;
     }
@@ -421,12 +533,15 @@ function rolePermissionEnabled(permissionId) {
     'schedule.view':['class.view','semester.view'],
     'schedule.edit':['class.view','semester.view','schedule.view'],
     'schedule.verify':['class.view','semester.view','schedule.view'],
+    'schedule.delete':['class.view','semester.view','schedule.view'],
     'pb.view':['class.view','semester.view'],'pb.create':['class.view','semester.view','pb.view'],
-    'pb.edit':['class.view','semester.view','pb.view'],'pb.progress.update':['class.view','semester.view','pb.view'],
+    'pb.edit':['class.view','semester.view','pb.view'],'pb.delete':['class.view','semester.view','pb.view'],
+    'pb.progress.update':['class.view','semester.view','pb.view'],
     'pb.marks.manage':['class.view','semester.view','pb.view'],
     'resources.view':['class.view','semester.view'],'resources.manage':['class.view','semester.view','resources.view'],
+    'resources.delete':['class.view','semester.view','resources.view'],
     'calendar.view':['class.view','semester.view'],'calendar.create':['class.view','semester.view','calendar.view'],
-    'calendar.edit':['class.view','semester.view','calendar.view'],
+    'calendar.edit':['class.view','semester.view','calendar.view'],'calendar.delete':['class.view','semester.view','calendar.view'],
     'members.view':['class.view'],'members.roles.manage':['class.view','members.view'],
     'reports.view':['class.view'],'notifications.manage':['class.view']
   };
@@ -460,6 +575,15 @@ function renderRoleLabWorkspace() {
   const ctx=roleTestContextData;
   if(!ctx || !activeRoleTest) return;
   const role=activeRoleTest.role, semesters=ctx.semesters||[];
+  if(ctx.role!==role) return;
+  const roleLabel=roleLabRoleLabel(role);
+  $('#rolePill').textContent=roleLabel;
+  $('#previewInfo').textContent='Kelas: '+(currentClass?.className||'Kelas ujian')+' • Peranan: '+roleLabel;
+  $('#previewAccountId').textContent='ID sementara: '+activeRoleTest.testUser.id+' • Tamat: '+activeRoleTest.expiresAt;
+  $('#testRoleMeta').textContent='Peranan: '+roleLabel;
+  $('#testAccountMeta').textContent='ID: '+activeRoleTest.testUser.id;
+  $('#welcomeName').textContent=activeRoleTest.testUser.name;
+  $('#welcomeEmail').textContent=activeRoleTest.testUser.email;
   const semester=semesters.find(x=>x.semester_id===activeTestSemesterId)||semesters[0]||null;
   activeTestSemesterId=semester?.semester_id||null;
   const ss=(ctx.semesterSubjects||[]).filter(x=>!semester || x.semester_id===semester.semester_id);
@@ -592,8 +716,10 @@ async function stopActiveRoleTest(returnToAdmin=true) {
   try { await api('stopRoleTest',{sessionId:old.sessionId}); }
   catch(error) { console.warn('Unable to close role test session:',error); }
   let closedLogs=[];
-  try { const history=await api('roleTestStatus',{sessionId:old.sessionId}); closedLogs=history.logs||[]; }
-  catch(error) { console.warn('Unable to load closed test audit:',error); }
+  if(returnToAdmin) {
+    try { const history=await api('roleTestStatus',{sessionId:old.sessionId}); closedLogs=history.logs||[]; }
+    catch(error) { console.warn('Unable to load closed test audit:',error); }
+  }
   activeRoleTest=null;roleTestContextData=null;activeTestSemesterId=null;
   currentUser=authenticatedUser;
   if(returnToAdmin) {
@@ -719,7 +845,7 @@ $('#runPreviewTestBtn')?.addEventListener('click',async()=>{
     const result=await api(action,data,activeRoleTest.token);
     $('#previewTestOutput').textContent=JSON.stringify(result,null,2);
     $('#previewTestResult').textContent='Ujian berjaya. Sebarang perubahan direkodkan dalam sandbox sesi ini.';
-    await loadRoleTestContext();await refreshRoleTestAudit();
+    await loadRoleTestContext();
   } catch(error) {
     $('#previewTestOutput').textContent=error.stack||error.message;
     $('#previewTestResult').textContent='Ujian ditolak / gagal: '+error.message;
@@ -732,7 +858,7 @@ $('#clearTestSandboxBtn')?.addEventListener('click',async()=>{
     const result=await api('clearRoleTestData',{sessionId:activeRoleTest.sessionId});
     $('#previewTestResult').textContent=result.message;
     $('#previewTestOutput').textContent='Sandbox dikosongkan.';
-    await loadRoleTestContext();await refreshRoleTestAudit();
+    await loadRoleTestContext();
   } catch(error) { $('#previewTestResult').textContent=error.message; }
 });
 $('#refreshTestAuditBtn')?.addEventListener('click',refreshRoleTestAudit);
@@ -751,7 +877,7 @@ $('#sessionForm')?.addEventListener('submit',async e=>{
   try {
     const result=await workspaceApi('createScheduleSession',data);
     $('#sessMsg').textContent=result.message||'Sesi berjaya direkodkan.';
-    e.target.reset();await loadRoleTestContext();await refreshRoleTestAudit();
+    e.target.reset();await loadRoleTestContext();
   } catch(error) { $('#sessMsg').textContent=error.message; }
 });
 $('#assignmentForm')?.addEventListener('submit',async e=>{
@@ -764,7 +890,7 @@ $('#assignmentForm')?.addEventListener('submit',async e=>{
   try {
     const result=await workspaceApi('createAssignment',data);
     $('#pbMsg').textContent=result.message||'PB berjaya diterbitkan.';
-    e.target.reset();await loadRoleTestContext();await refreshRoleTestAudit();
+    e.target.reset();await loadRoleTestContext();
   } catch(error) { $('#pbMsg').textContent=error.message; }
 });
 $('#eventForm')?.addEventListener('submit',async e=>{
@@ -778,7 +904,7 @@ $('#eventForm')?.addEventListener('submit',async e=>{
   try {
     const result=await workspaceApi('createCalendarEvent',data);
     $('#evMsg').textContent=result.message||'Acara berjaya ditambah.';
-    e.target.reset();await loadRoleTestContext();await refreshRoleTestAudit();
+    e.target.reset();await loadRoleTestContext();
   } catch(error) { $('#evMsg').textContent=error.message; }
 });
 
@@ -791,7 +917,7 @@ $('#roleLabNav')?.addEventListener('click',e=>{
 $('#roleLabContent')?.addEventListener('change',e=>{
   if(e.target.id==='roleLabSemester') { activeTestSemesterId=e.target.value; renderRoleLabWorkspace(); }
 });
-$('#roleLabRefreshBtn')?.addEventListener('click',async()=>{await loadRoleTestContext();await refreshRoleTestAudit();});
+$('#roleLabRefreshBtn')?.addEventListener('click',async()=>{await loadRoleTestContext();});
 $('#roleLabAuditRefreshBtn')?.addEventListener('click',refreshRoleTestAudit);
 $('#roleLabContent')?.addEventListener('click',async e=>{
   const btn=e.target.closest('[data-role-action]'); if(!btn) return;
@@ -803,24 +929,24 @@ $('#roleLabContent')?.addEventListener('click',async e=>{
   if(action==='verify-schedule') {
     const comment=prompt('Catatan pengesahan (pilihan):','Disemak dalam sesi ujian');
     if(comment===null) return;
-    try { await workspaceApi('verifySchedule',{sessionId:id,status:'VERIFIED',comment}); await loadRoleTestContext();await refreshRoleTestAudit(); }
+    try { await workspaceApi('verifySchedule',{sessionId:id,status:'VERIFIED',comment}); await loadRoleTestContext(); }
     catch(err){alert(err.message);} return;
   }
   if(['delete-schedule','delete-pb','delete-resource','delete-event'].includes(action)) {
     if(!confirm('Arkibkan rekod ini dalam sandbox sesi ujian?')) return;
     const map={'delete-schedule':['deleteSchedule',{sessionId:id}],'delete-pb':['deleteAssignment',{assignmentId:id}],
       'delete-resource':['deleteResource',{resourceId:id}],'delete-event':['deleteCalendarEvent',{eventId:id}]};
-    try { const [apiAction,data]=map[action]; await workspaceApi(apiAction,data); await loadRoleTestContext();await refreshRoleTestAudit(); }
+    try { const [apiAction,data]=map[action]; await workspaceApi(apiAction,data); await loadRoleTestContext(); }
     catch(err){alert(err.message);} return;
   }
   if(action==='save-member-role') {
     const select=document.querySelector(`[data-member-role="${CSS.escape(id)}"]`);
-    try { await workspaceApi('manageClassMemberRole',{classId:activeRoleTest.classId,targetUserId:id,memberRole:select.value}); await loadRoleTestContext();await refreshRoleTestAudit(); }
+    try { await workspaceApi('manageClassMemberRole',{classId:activeRoleTest.classId,targetUserId:id,memberRole:select.value}); await loadRoleTestContext(); }
     catch(err){alert(err.message);} return;
   }
   if(action==='activate-class') {
     if(!confirm('Aktifkan kelas ini dalam sandbox sesi ujian?')) return;
-    try { await workspaceApi('activateClass',{classId:activeRoleTest.classId}); await loadRoleTestContext();await refreshRoleTestAudit(); alert('Permintaan pengaktifan berjaya diproses.'); }
+    try { await workspaceApi('activateClass',{classId:activeRoleTest.classId}); await loadRoleTestContext(); alert('Permintaan pengaktifan berjaya diproses.'); }
     catch(err){alert(err.message);} return;
   }
   if(action==='export-report') { roleLabExportReport(); return; }
@@ -829,13 +955,13 @@ $('#roleLabContent')?.addEventListener('submit',async e=>{
   if(e.target.id==='roleLabSemesterForm') {
     e.preventDefault();const v=Object.fromEntries(new FormData(e.target).entries());
     try { await workspaceApi('createSemester',{classId:activeRoleTest.classId,semesterName:v.semesterName,academicSession:v.academicSession,semesterNumber:Number(v.semesterNumber),startDate:v.startDate,endDate:v.endDate});
-      $('#roleLabSemesterMessage').textContent='Semester berjaya dicipta dalam sandbox.';await loadRoleTestContext();await refreshRoleTestAudit(); }
+      $('#roleLabSemesterMessage').textContent='Semester berjaya dicipta dalam sandbox.';await loadRoleTestContext(); }
     catch(err){$('#roleLabSemesterMessage').textContent=err.message;} return;
   }
   if(e.target.id==='roleLabNotificationForm') {
     e.preventDefault();const v=Object.fromEntries(new FormData(e.target).entries());
     try { await workspaceApi('createClassNotification',{classId:activeRoleTest.classId,title:v.title,message:v.message,notificationType:'role_test'});
-      $('#roleLabNotificationMessage').textContent='Hebahan ujian direkodkan dalam sandbox.';e.target.reset();await refreshRoleTestAudit(); }
+      $('#roleLabNotificationMessage').textContent='Hebahan ujian direkodkan dalam sandbox.';e.target.reset();await loadRoleTestContext(); }
     catch(err){$('#roleLabNotificationMessage').textContent=err.message;} return;
   }
   if(e.target.id!=='roleLabCrudForm') return;
@@ -866,7 +992,7 @@ $('#roleLabContent')?.addEventListener('submit',async e=>{
       }
     }
     roleLabEditing=null;
-    await loadRoleTestContext();await refreshRoleTestAudit();
+    await loadRoleTestContext();
     const editor=$('#roleLabEditor'); if(editor) editor.innerHTML='<div class="role-lab-success">Perubahan berjaya disimpan dalam sandbox sesi ujian.</div>';
   } catch(err) { if(message) message.textContent='Tidak berjaya: '+err.message; }
 });
@@ -886,9 +1012,15 @@ document.querySelectorAll('.student-tab').forEach(button=>{
   });
 });
 
-function logoutMySemester(){
-  if(activeRoleTest) { const old=activeRoleTest; api('stopRoleTest',{sessionId:old.sessionId}).catch(()=>{}); activeRoleTest=null; }
-  idToken=null;currentUser=null;authenticatedUser=null;currentClass=null;adminData=null;
+async function logoutMySemester(){
+  if(activeRoleTest) {
+    const old=activeRoleTest;
+    try { await api('stopRoleTest',{sessionId:old.sessionId}); } catch(error) { console.warn('Unable to close test session:',error); }
+    activeRoleTest=null;
+  }
+  if(devToken) { try { await api('devLogout',{}); } catch(error) { console.warn('Unable to revoke development session:',error); } }
+  idToken=null;devToken=null;currentUser=null;authenticatedUser=null;currentClass=null;adminData=null;
+  roleTestContextData=null;activeTestSemesterId=null;
   show('#appView',false);show('#loginView',true);
   if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();
 }

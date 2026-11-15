@@ -147,3 +147,14 @@ body.busy #classArea{opacity:.55;pointer-events:none;transition:opacity .15s}bod
  .role-lab-form label:has(textarea){grid-column:auto}
  .role-lab-card-head{align-items:flex-start}
 }
+
+.manual-login-form{width:100%;max-width:340px;margin:18px auto 8px;text-align:left}
+.manual-login-form label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700;color:#38516e}
+.manual-login-form input{width:100%;border:1px solid #cbd5e1;border-radius:10px;padding:12px 13px;background:#fff;font:inherit;font-weight:400}
+.manual-login-form .btn{width:100%;justify-content:center}
+.google-login-panel{margin-top:18px}
+
+/* Admin data CRUD editor */
+#adminDataJson{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.5;white-space:pre;tab-size:2}
+.btn-danger{background:#b42318;color:#fff;border:1px solid #b42318}
+.btn-danger:disabled{opacity:.45;cursor:not-allowed}
