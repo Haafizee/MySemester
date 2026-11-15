@@ -1,3 +1,4 @@
+console.log('MySemester app.js v1.2 (top-postMessage fix) loaded');
 let idToken = null;
 let currentUser = null;
 let currentClass = null;
