@@ -5,7 +5,6 @@
 <meta name="theme-color" content="#173b65"><meta name="description" content="MySemester - Student Academic Management System">
 <link rel="manifest" href="manifest.json"><link rel="stylesheet" href="assets/style.css">
 <title>MySemester</title>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="config.js"></script>
 
 <style id="role-test-styles">
@@ -42,7 +41,13 @@
 <section id="loginView" class="login-card">
  <div class="hero-icon">🎓</div><h1>Urus semester anda dengan lebih teratur.</h1>
  <p>Jadual kelas, tugasan PB, nota dan tarikh penting dalam satu tempat.</p>
- <div id="googleButton"></div><p class="muted small">Log masuk menggunakan akaun Google. Selepas log masuk, sistem akan memaparkan ruang kerja mengikut peranan anda.</p>
+ <form id="manualLoginForm" class="form-stack manual-login-form">
+  <label>Nama pengguna <input id="manualUsername" name="username" autocomplete="username" required value="devadmin" placeholder="Nama pengguna pembangunan"></label>
+  <label>Kata laluan <input id="manualPassword" name="password" type="password" autocomplete="current-password" required placeholder="Kata laluan pembangunan"></label>
+  <button id="manualLoginBtn" class="btn" type="submit">Log masuk Development Mode</button>
+  <p class="muted small">Development Mode sahaja. Akaun ini tidak menggunakan Google OAuth dan tidak boleh digunakan apabila DEV_MODE dimatikan pada server.</p>
+ </form>
+ <div id="googleLoginPanel" class="google-login-panel hidden"><div id="googleButton"></div><p class="muted small">Log masuk menggunakan akaun Google untuk penggunaan produksi.</p></div>
  <div id="loginError" class="error"></div>
 </section>
 
@@ -60,6 +65,7 @@
       <button class="admin-tab active" data-admin-tab="classes">Pengurusan Kelas</button>
       <button class="admin-tab" data-admin-tab="preview">🔍 Pratonton Peranan</button>
       <button class="admin-tab" data-admin-tab="users">Pengguna</button>
+      <button class="admin-tab" data-admin-tab="data">Pengurusan Data (CRUD)</button>
       <button class="admin-tab" data-admin-tab="guide">Panduan Admin</button>
     </nav>
     <div id="adminLoading" class="panel">Memuatkan data pentadbiran...</div>
@@ -168,6 +174,53 @@
       <section id="admin-panel-users" class="admin-tab-panel hidden panel">
         <h2>Pengurusan pengguna</h2><p class="muted">Pengguna yang pernah mendaftar melalui Google Sign-In.</p>
         <div class="table-wrap"><table><thead><tr><th>Nama</th><th>Emel</th><th>Status akaun</th><th>Log masuk terakhir</th></tr></thead><tbody id="adminUserList"></tbody></table></div>
+      </section>
+      <section id="admin-panel-data" class="admin-tab-panel hidden">
+        <div class="panel">
+          <div class="section-heading">
+            <div><span class="eyebrow">SYSTEM ADMIN ONLY</span><h2>Pengurusan Data MySemester</h2>
+              <p class="muted">CRUD penuh untuk jadual data operasi. Rekod audit dan token keselamatan kekal dilindungi.</p></div>
+            <button id="adminDataRefresh" class="btn btn-light btn-small" type="button">Muat semula</button>
+          </div>
+          <div class="two-fields">
+            <label>Jadual database
+              <select id="adminDataTable">
+                <option>Users</option><option>UserRoles</option><option>Classes</option><option>ClassMembers</option>
+                <option>ClassInvitations</option><option>Semesters</option><option>Subjects</option><option>SemesterSubjects</option>
+                <option>ScheduleSeries</option><option>ClassSessions</option><option>ScheduleChangeRequests</option>
+                <option>ScheduleHistory</option><option>Assignments</option><option>AssignmentResources</option>
+                <option>AssignmentHistory</option><option>StudentAssignmentProgress</option><option>AssignmentChecklists</option>
+                <option>SubmissionRecords</option><option>Folders</option><option>Resources</option><option>CalendarEvents</option>
+                <option>Notifications</option><option>NotificationPreferences</option><option>PersonalTasks</option><option>PersonalNotes</option>
+              </select>
+            </label>
+            <label>Carian rekod <input id="adminDataSearch" placeholder="Cari ID, nama, emel atau kandungan"></label>
+          </div>
+          <div class="btn-row" style="margin:12px 0">
+            <button id="adminDataLoad" class="btn btn-light" type="button">Papar rekod</button>
+            <button id="adminDataNew" class="btn" type="button">Rekod baharu</button>
+            <span id="adminDataCount" class="muted small"></span>
+          </div>
+          <div class="table-wrap">
+            <table><thead><tr><th>ID</th><th>Ringkasan</th><th>Tindakan</th></tr></thead><tbody id="adminDataList">
+              <tr><td colspan="3" class="muted">Pilih jadual dan tekan Papar rekod.</td></tr>
+            </tbody></table>
+          </div>
+        </div>
+        <div class="panel" style="margin-top:16px">
+          <div class="section-heading"><div><h3>Editor rekod</h3><p id="adminDataEditorHint" class="muted small">Pilih rekod atau cipta rekod baharu. Format JSON menggunakan nama lajur spreadsheet.</p></div>
+            <span id="adminDataMode" class="pill">Tiada pilihan</span></div>
+          <label>JSON rekod
+            <textarea id="adminDataJson" rows="14" spellcheck="false" placeholder='{"id":"..."}'></textarea>
+          </label>
+          <div class="btn-row">
+            <button id="adminDataSave" class="btn" type="button">Simpan rekod</button>
+            <button id="adminDataDelete" class="btn btn-danger" type="button" disabled>Padam rekod</button>
+            <button id="adminDataClear" class="btn btn-light" type="button">Kosongkan editor</button>
+          </div>
+          <p id="adminDataMessage" class="small form-message" aria-live="polite"></p>
+          <p class="muted small">Nota: Pemadaman adalah kekal. AuditLogs, RoleTest*, PermissionMatrix dan PushSubscriptions tidak dibuka melalui CRUD umum. Gunakan tab Pratonton Peranan untuk matriks kebenaran dan sesi ujian.</p>
+        </div>
       </section>
       <section id="admin-panel-guide" class="admin-tab-panel hidden panel">
         <h2>Aliran kerja pentadbir</h2>
