@@ -198,7 +198,19 @@
     <div id="classArea" class="hidden">
       <div class="class-head panel"><div><span class="eyebrow">KELAS AKTIF</span><h2 id="className"></h2><p id="classCode" class="muted"></p></div>
         <div class="class-head-right"><select id="classSwitch" class="hidden"></select><select id="semesterSwitch" class="hidden"></select><span id="rolePill" class="pill">Ahli kelas</span></div></div>
-      <section id="previewTestConsole" class="test-console hidden">
+      <section id="roleLabWorkspace" class="role-lab hidden">
+        <div class="role-lab-heading">
+          <div><span class="eyebrow">SIMULATED ROLE WORKSPACE</span><h2 id="roleLabTitle">Dashboard peranan</h2><p id="roleLabDescription" class="muted"></p></div>
+          <div class="role-lab-status"><span class="pill">SANDBOX</span><span id="roleLabRolePill" class="pill"></span></div>
+        </div>
+        <div id="roleLabStats" class="role-lab-stats"></div>
+        <nav id="roleLabNav" class="role-lab-nav" aria-label="Menu ruang kerja peranan"></nav>
+        <div id="roleLabContent" class="role-lab-content"></div>
+        <section class="role-lab-card role-lab-audit-panel"><div class="role-lab-card-head"><div><h3>Log aktiviti sesi</h3><p class="muted small">Pemantauan tindakan CRUD yang dijalankan oleh akaun sementara.</p></div><button id="roleLabAuditRefreshBtn" type="button" class="btn btn-light btn-small">Muat semula log</button></div><div id="roleLabAudit" class="test-audit muted small">Belum ada aktiviti.</div></section>
+        <div class="role-lab-footer"><span>🧪 Semua perubahan CRUD disimpan dalam sandbox sesi ujian ini.</span><button id="roleLabRefreshBtn" type="button" class="btn btn-light btn-small">Muat semula data</button></div>
+      </section>
+      <details id="previewTestConsole" class="test-console hidden">
+        <summary>Diagnostik API lanjutan (untuk penyelenggaraan sahaja)</summary>
         <div class="section-heading"><div><h3>Panel ujian fungsi API</h3><p class="muted small">Jalankan tindakan backend sebagai akaun sementara. Payload disimpan dalam sandbox sesi ini.</p></div><button id="refreshTestAuditBtn" class="btn btn-light btn-small" type="button">Muat semula log</button></div>
         <div class="test-meta"><span id="testRoleMeta"></span><span id="testAccountMeta"></span><span id="testExpiryMeta"></span></div>
         <div class="form-stack">
@@ -240,7 +252,7 @@
         </div>
         <h4>Log aktiviti akaun sementara</h4>
         <div id="previewTestAudit" class="test-audit muted small">Tiada aktiviti.</div>
-      </section>
+        </details>
       <nav class="tabs"><button class="student-tab active" data-tab="overview">Ringkasan</button><button class="student-tab" data-tab="schedule">Jadual</button><button class="student-tab" data-tab="assignments">Tugasan PB</button><button class="student-tab" data-tab="calendar">Kalendar</button></nav>
 
       <section id="student-tab-overview" class="student-tab-content">
