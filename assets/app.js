@@ -97,12 +97,18 @@ function api(action,data) {
     let timeoutId;
     const cleanup=()=>{window.removeEventListener('message',onMessage);window.clearTimeout(timeoutId);};
     const onMessage=(event)=>{
-      if(event.source!==frame.contentWindow)return;
+      // The reply comes from a nested Google iframe (not apiFrame itself), so event.source
+      // can never equal frame.contentWindow. The random requestId is what authenticates it.
       const message=event.data;
       if(!message||message.type!=='MYSTER_POST_RESPONSE'||message.requestId!==requestId)return;
       finished=true;cleanup();
       const result=message.result||{};
-      if(result.ok)resolve(result);else reject(new Error(result.error||'MySemester API returned an error.'));
+      if(result.ok)resolve(result);
+      else{
+        const err=result.error||'MySemester API returned an error.';
+        if(/token verification failed/i.test(err)){idToken=null;reject(new Error('Sesi Google tamat. Sila log masuk semula.'));}
+        else reject(new Error(err));
+      }
     };
     window.addEventListener('message',onMessage);
     timeoutId=window.setTimeout(()=>{
