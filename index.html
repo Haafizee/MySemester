@@ -7,15 +7,34 @@
 <title>MySemester</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="config.js"></script>
-<style>
-.role-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:8px}
-.role-preview-card{display:flex;flex-direction:column;align-items:flex-start;gap:5px;padding:14px;border:1px solid #d7e0ec;border-radius:12px;background:#fff;color:#173b65;cursor:pointer;text-align:left}
-.role-preview-card.selected{border:2px solid #2563eb;background:#eff6ff;box-shadow:0 0 0 2px #dbeafe}
-.role-preview-icon{font-size:22px}.role-preview-card small{color:#64748b}
-.preview-data-row{display:flex;flex-direction:column;gap:4px;padding:12px 0;border-bottom:1px solid #e2e8f0}
-.preview-data-row small{color:#64748b}\n.preview-capabilities{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}\n.preview-capabilities span{padding:6px 9px;border-radius:8px;background:#f1f5f9;font-size:13px}
-@media(max-width:700px){.role-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+<style id="role-test-styles">
+.role-matrix-wrap{overflow:auto;margin:14px 0;border:1px solid #dbe4ef;border-radius:12px}
+.role-matrix{width:100%;border-collapse:collapse;min-width:780px}
+.role-matrix th,.role-matrix td{padding:10px 12px;border-bottom:1px solid #e7edf5;text-align:center;font-size:13px}
+.role-matrix th:first-child,.role-matrix td:first-child{text-align:left;min-width:260px}
+.role-matrix th{background:#f4f7fb;color:#244568;position:sticky;top:0}
+.role-matrix .perm-group td{background:#edf3fa;color:#173b65;font-weight:700;text-align:left}
+.role-matrix input[type=checkbox]{width:18px;height:18px;accent-color:#2458d8;cursor:pointer}
+.matrix-actions,.test-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.role-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px}
+.role-card{border:1px solid #dbe4ef;border-radius:12px;padding:12px;display:flex;gap:9px;align-items:center;background:#fff;cursor:pointer}
+.role-card:has(input:checked){border-color:#2458d8;background:#eff5ff;box-shadow:0 0 0 2px #2458d81a}
+.role-card input{accent-color:#2458d8}
+.role-card span{display:block;font-weight:700}.role-card small{display:block;color:#60758e;font-size:11px}
+.preview-banner{display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap}
+.preview-account{font-size:12px;color:#244568;margin-top:4px}
+.preview-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.test-console{margin-top:18px;border:1px solid #dbe4ef;border-radius:14px;padding:16px;background:#fff}
+.test-console textarea{width:100%;font-family:ui-monospace,monospace;min-height:120px}
+.test-console pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#10243b;color:#e9f2ff;border-radius:10px;padding:12px;max-height:280px;overflow:auto;font-size:12px}
+.test-meta{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.test-meta span{background:#edf3fa;border-radius:20px;padding:5px 9px;font-size:12px}
+.test-audit{max-height:220px;overflow:auto}.test-audit-item{padding:8px 0;border-bottom:1px solid #e7edf5;font-size:12px}
+.test-audit-item small{display:block;color:#60758e}
+@media(max-width:700px){.preview-banner{align-items:flex-start}.preview-actions{width:100%}.role-matrix th:first-child,.role-matrix td:first-child{min-width:190px}}
 </style>
+
 </head>
 <body>
 <header class="topbar"><div class="brand"><span class="brand-icon">M</span><div><b>MySemester</b><small>Student Academic Management</small></div></div><div id="profile" class="profile hidden"></div></header>
@@ -104,26 +123,46 @@
         </section>
       </section>
 
-      <!-- PREVIEW AS ROLE -->
+      <!-- SYSTEM ADMIN ONLY: EDITABLE PERMISSION MATRIX + TEMPORARY ROLE TEST -->
       <section id="admin-panel-preview" class="admin-tab-panel hidden panel">
-        <h2>Pratonton peranan</h2>
-        <p class="muted">Lihat dan cuba sistem sebagaimana yang dilihat oleh setiap peranan. Pelayan menyemak kebenaran <b>mengikut peranan yang dipilih</b> (bukan kebenaran System Admin anda), jadi butang atau tindakan yang tidak dibenarkan akan ditolak.</p>
+        <h2>Makmal Peranan &amp; Matriks Kebenaran</h2>
+        <p class="muted">Modul ini hanya tersedia kepada System Administrator. Tetapkan kebenaran bagi setiap peranan, kemudian jalankan akaun ujian sementara yang terasing daripada data produksi.</p>
+
+        <div class="section-heading">
+          <div><h3>Matriks kebenaran peranan</h3><p class="muted small">Tandakan (tick) untuk membenarkan fungsi. Nyah tanda (untick) untuk menyekat fungsi. Perubahan disimpan di backend dan digunakan semasa ujian peranan serta semakan akses pengguna sebenar.</p></div>
+          <div class="matrix-actions">
+            <button id="matrixReloadBtn" class="btn btn-light btn-small" type="button">Muat semula</button>
+            <button id="matrixSaveBtn" class="btn btn-small" type="button">Simpan matriks</button>
+          </div>
+        </div>
+        <div id="matrixMessage" class="small form-message" aria-live="polite"></div>
+        <div class="role-matrix-wrap">
+          <table class="role-matrix">
+            <thead><tr><th>Fungsi / Kebenaran</th><th>Student</th><th>PIC</th><th>Lecturer</th><th>KO</th><th>Class Admin</th><th>System Admin</th></tr></thead>
+            <tbody id="permMatrix"><tr><td colspan="6">Memuatkan matriks...</td></tr></tbody>
+          </table>
+        </div>
+
+        <hr>
+        <h3>Uji sistem sebagai peranan</h3>
+        <p class="muted small">Setiap sesi menghasilkan akaun sementara unik. Akaun ini bukan akaun Google dan tidak boleh digunakan oleh pengguna lain. Semua rekod cipta/ubah/padam yang disokong disimpan dalam sandbox sesi ujian, bukan pada rekod kelas sebenar.</p>
         <div class="form-stack preview-form">
-          <label>Kelas <select id="previewClass"></select></label>
-          <div><span class="label-text">Peranan</span><div id="roleCards" class="role-cards"></div></div>
-          <button id="startPreviewBtn" class="btn" type="button">Mulakan pratonton</button>
-          <div id="previewMessage" class="small form-message"></div>
+          <label>Kelas untuk diuji <select id="previewClass"></select></label>
+          <div><span class="label-text">Pilih peranan</span><div id="roleCards" class="role-cards"></div></div>
+          <button id="startPreviewBtn" class="btn" type="button">Cipta akaun sementara &amp; mulakan ujian</button>
+          <div id="previewMessage" class="small form-message" aria-live="polite"></div>
         </div>
         <div class="preview-rules">
-          <b>Cara pratonton berfungsi</b>
+          <b>Peraturan akaun ujian</b>
           <ul>
-            <li><b>Lalai: selamat.</b> Tindakan disemak dan dipaparkan, tetapi <u>tiada apa disimpan</u> dalam Google Sheets (tiada PB, sesi atau notifikasi sebenar dicipta).</li>
-            <li>Dalam mod pratonton anda boleh menghidupkan <i>"Simpan perubahan kelas sebenar"</i> jika mahu ujian benar-benar disimpan.</li>
-            <li>Kemajuan peribadi pelajar <b>tidak pernah disimpan</b> dalam pratonton.</li>
+            <li>Hanya System Admin yang telah disahkan oleh Google boleh mencipta, menggunakan dan menamatkan akaun ujian.</li>
+            <li>Setiap akaun mempunyai ID bermula dengan <code>TST_ROLE_</code> dan tamat secara automatik selepas 4 jam.</li>
+            <li>Ujian menyokong operasi baca/tulis pada sandbox terasing. Data produksi asal tidak diubah.</li>
+            <li>Apabila sesi ditamatkan, akaun ujian dinyahaktifkan. Log audit dan data sandbox dikekalkan sehingga Admin memilih untuk mengosongkannya.</li>
           </ul>
         </div>
-        <h3>Matriks kebenaran</h3>
-        <div class="table-wrap"><table class="perm-table"><thead><tr><th>Kebenaran</th><th>Pelajar</th><th>PIC</th><th>Pensyarah</th><th>KO</th><th>Pentadbir kelas</th></tr></thead><tbody id="permMatrix"></tbody></table></div>
+        <h3>Sejarah ujian peranan</h3>
+        <div id="roleTestHistory" class="test-audit muted small">Belum ada sesi ujian dipaparkan.</div>
       </section>
 
       <section id="admin-panel-users" class="admin-tab-panel hidden panel">
@@ -148,11 +187,10 @@
   <!-- ================= CLASS WORKSPACE (all roles) ================= -->
   <section id="studentView" class="hidden">
     <div id="previewBanner" class="preview-banner hidden">
-      <div><strong>🔍 Mod pratonton</strong> <span id="previewInfo"></span></div>
+      <div><strong>🧪 Mod ujian peranan</strong><div id="previewInfo"></div><div id="previewAccountId" class="preview-account"></div></div>
       <div class="preview-actions">
-        <label class="small">Peranan <select id="previewRoleSwitch"></select></label>
-        <label class="small check"><input type="checkbox" id="previewCommit" disabled> Simpan perubahan kelas sebenar (tidak tersedia dalam Safe Preview)</label>
-        <button id="exitPreviewBtn" class="btn btn-small">Keluar pratonton</button>
+        <label class="small">Tukar peranan <select id="previewRoleSwitch"></select></label>
+        <button id="exitPreviewBtn" class="btn btn-small btn-light" type="button">Tamatkan sesi ujian</button>
       </div>
     </div>
     <div class="welcome"><div><span class="eyebrow">RUANG KERJA KELAS</span><h1 id="welcomeName">Dashboard</h1><p id="welcomeEmail" class="muted"></p></div><button id="logoutBtnStudent" class="btn btn-light">Log keluar</button></div>
@@ -160,6 +198,49 @@
     <div id="classArea" class="hidden">
       <div class="class-head panel"><div><span class="eyebrow">KELAS AKTIF</span><h2 id="className"></h2><p id="classCode" class="muted"></p></div>
         <div class="class-head-right"><select id="classSwitch" class="hidden"></select><select id="semesterSwitch" class="hidden"></select><span id="rolePill" class="pill">Ahli kelas</span></div></div>
+      <section id="previewTestConsole" class="test-console hidden">
+        <div class="section-heading"><div><h3>Panel ujian fungsi API</h3><p class="muted small">Jalankan tindakan backend sebagai akaun sementara. Payload disimpan dalam sandbox sesi ini.</p></div><button id="refreshTestAuditBtn" class="btn btn-light btn-small" type="button">Muat semula log</button></div>
+        <div class="test-meta"><span id="testRoleMeta"></span><span id="testAccountMeta"></span><span id="testExpiryMeta"></span></div>
+        <div class="form-stack">
+          <label>Fungsi untuk diuji
+            <select id="previewTestAction">
+              <option value="roleTestContext">Muat konteks kelas (baca)</option>
+              <option value="listSchedules">Lihat jadual</option>
+              <option value="createScheduleSession">Tambah sesi jadual</option>
+              <option value="updateSchedule">Ubah sesi jadual</option>
+              <option value="verifySchedule">Sahkan perubahan jadual</option>
+              <option value="listAssignments">Lihat PB</option>
+              <option value="createAssignment">Cipta PB</option>
+              <option value="updateProgress">Kemas kini kemajuan sendiri</option>
+              <option value="listResources">Lihat nota / sumber</option>
+              <option value="createCalendarEvent">Tambah acara kalendar</option>
+              <option value="createSemester">Tambah semester</option>
+              <option value="activateClass">Aktifkan kelas</option>
+              <option value="updateAssignment">Ubah PB</option>
+              <option value="recordAssignmentMark">Rekod markah rasmi</option>
+              <option value="createResourceLink">Tambah pautan sumber</option>
+              <option value="updateResource">Ubah sumber</option>
+              <option value="updateCalendarEvent">Ubah acara kalendar</option>
+              <option value="listClassMembers">Lihat ahli kelas</option>
+              <option value="manageClassMemberRole">Ubah peranan ahli</option>
+              <option value="classReport">Jana laporan kelas</option>
+              <option value="createClassNotification">Hantar notifikasi kelas</option>
+            </select>
+          </label>
+          <label>Data permintaan (JSON)
+            <textarea id="previewTestPayload" spellcheck="false">{}</textarea>
+          </label>
+          <div class="test-actions">
+            <button id="runPreviewTestBtn" class="btn" type="button">Jalankan ujian</button>
+            <button id="fillTestPayloadBtn" class="btn btn-light" type="button">Isi contoh data</button>
+            <button id="clearTestSandboxBtn" class="btn btn-light" type="button">Kosongkan sandbox sesi</button>
+          </div>
+          <div id="previewTestResult" class="small form-message" aria-live="polite"></div>
+          <pre id="previewTestOutput">Keputusan ujian akan dipaparkan di sini.</pre>
+        </div>
+        <h4>Log aktiviti akaun sementara</h4>
+        <div id="previewTestAudit" class="test-audit muted small">Tiada aktiviti.</div>
+      </section>
       <nav class="tabs"><button class="student-tab active" data-tab="overview">Ringkasan</button><button class="student-tab" data-tab="schedule">Jadual</button><button class="student-tab" data-tab="assignments">Tugasan PB</button><button class="student-tab" data-tab="calendar">Kalendar</button></nav>
 
       <section id="student-tab-overview" class="student-tab-content">
