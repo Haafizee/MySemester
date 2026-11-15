@@ -19,7 +19,7 @@
 </section>
 
 <section id="appView" class="hidden">
-  <!-- SYSTEM ADMIN WORKSPACE -->
+  <!-- ================= SYSTEM ADMIN WORKSPACE ================= -->
   <section id="adminView" class="hidden">
     <div class="admin-hero">
       <div><span class="eyebrow">SYSTEM ADMINISTRATION</span><h1>Panel Pentadbir Sistem</h1>
@@ -30,6 +30,7 @@
     <div id="adminStats" class="admin-stats"></div>
     <nav class="admin-tabs">
       <button class="admin-tab active" data-admin-tab="classes">Pengurusan Kelas</button>
+      <button class="admin-tab" data-admin-tab="preview">🔍 Pratonton Peranan</button>
       <button class="admin-tab" data-admin-tab="users">Pengguna</button>
       <button class="admin-tab" data-admin-tab="guide">Panduan Admin</button>
     </nav>
@@ -51,12 +52,14 @@
             </form>
           </section>
           <section class="panel">
-            <div class="section-heading"><div><h2>Senarai kelas</h2><p class="muted">Semua kelas yang berdaftar dalam MySemester.</p></div><button id="refreshAdminBtn" class="btn btn-light btn-small">Muat semula</button></div>
+            <div class="section-heading"><div><h2>Senarai kelas</h2><p class="muted">Semua kelas yang berdaftar dalam MySemester.</p></div>
+              <div class="btn-row"><button id="clearCacheBtn" class="btn btn-light btn-small" title="Gunakan selepas anda edit Google Sheets secara manual">Kosongkan cache</button><button id="refreshAdminBtn" class="btn btn-light btn-small">Muat semula</button></div></div>
             <div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Kod</th><th>Status</th><th>Semester</th><th>Ahli</th><th></th></tr></thead><tbody id="adminClassList"></tbody></table></div>
           </section>
         </div>
         <section id="adminClassDetail" class="panel hidden">
-          <div class="section-heading"><div><span class="eyebrow">PENGURUSAN KELAS DIPILIH</span><h2 id="selectedClassTitle">Kelas</h2><p id="selectedClassMeta" class="muted"></p></div></div>
+          <div class="section-heading"><div><span class="eyebrow">PENGURUSAN KELAS DIPILIH</span><h2 id="selectedClassTitle">Kelas</h2><p id="selectedClassMeta" class="muted"></p></div>
+            <button id="previewThisClassBtn" class="btn btn-light btn-small">🔍 Pratonton kelas ini</button></div>
           <div class="admin-grid">
             <div>
               <h3>Semester</h3><div id="semesterList" class="semester-list"></div>
@@ -92,6 +95,28 @@
         </section>
       </section>
 
+      <!-- PREVIEW AS ROLE -->
+      <section id="admin-panel-preview" class="admin-tab-panel hidden panel">
+        <h2>Pratonton peranan</h2>
+        <p class="muted">Lihat dan cuba sistem sebagaimana yang dilihat oleh setiap peranan. Pelayan menyemak kebenaran <b>mengikut peranan yang dipilih</b> (bukan kebenaran System Admin anda), jadi butang atau tindakan yang tidak dibenarkan akan ditolak.</p>
+        <div class="form-stack preview-form">
+          <label>Kelas <select id="previewClass"></select></label>
+          <div><span class="label-text">Peranan</span><div id="roleCards" class="role-cards"></div></div>
+          <button id="startPreviewBtn" class="btn">Mulakan pratonton</button>
+          <div id="previewMessage" class="small form-message"></div>
+        </div>
+        <div class="preview-rules">
+          <b>Cara pratonton berfungsi</b>
+          <ul>
+            <li><b>Lalai: selamat.</b> Tindakan disemak dan dipaparkan, tetapi <u>tiada apa disimpan</u> dalam Google Sheets (tiada PB, sesi atau notifikasi sebenar dicipta).</li>
+            <li>Dalam mod pratonton anda boleh menghidupkan <i>"Simpan perubahan kelas sebenar"</i> jika mahu ujian benar-benar disimpan.</li>
+            <li>Kemajuan peribadi pelajar <b>tidak pernah disimpan</b> dalam pratonton.</li>
+          </ul>
+        </div>
+        <h3>Matriks kebenaran</h3>
+        <div class="table-wrap"><table class="perm-table"><thead><tr><th>Kebenaran</th><th>Pelajar</th><th>PIC</th><th>Pensyarah</th><th>KO</th><th>Pentadbir kelas</th></tr></thead><tbody id="permMatrix"></tbody></table></div>
+      </section>
+
       <section id="admin-panel-users" class="admin-tab-panel hidden panel">
         <h2>Pengurusan pengguna</h2><p class="muted">Pengguna yang pernah mendaftar melalui Google Sign-In.</p>
         <div class="table-wrap"><table><thead><tr><th>Nama</th><th>Emel</th><th>Status akaun</th><th>Log masuk terakhir</th></tr></thead><tbody id="adminUserList"></tbody></table></div>
@@ -104,26 +129,82 @@
           <li><strong>Aktifkan kelas</strong> selepas sekurang-kurangnya tiga semester direkodkan.</li>
           <li><strong>Jana kod jemputan</strong> dan edarkan kepada pelajar.</li>
           <li><strong>Tetapkan KO, PIC dan pensyarah</strong> berdasarkan emel pengguna yang telah berdaftar.</li>
+          <li><strong>Pratonton peranan</strong> untuk menyemak apa yang dilihat dan boleh dilakukan oleh setiap peranan.</li>
         </ol>
-        <p class="muted small">System Admin mempunyai akses merentas kelas. KO/PIC/pensyarah hanya mendapat kebenaran berdasarkan kelas yang ditetapkan kepada mereka.</p>
+        <p class="muted small">System Admin mempunyai akses merentas kelas. KO/PIC/pensyarah hanya mendapat kebenaran berdasarkan kelas yang ditetapkan kepada mereka. Jika anda mengedit Google Sheets secara manual, tekan <b>Kosongkan cache</b> supaya perubahan dipaparkan serta-merta.</p>
       </section>
     </div>
   </section>
 
-  <!-- STUDENT WORKSPACE -->
+  <!-- ================= CLASS WORKSPACE (all roles) ================= -->
   <section id="studentView" class="hidden">
-    <div class="welcome"><div><span class="eyebrow">STUDENT WORKSPACE</span><h1 id="welcomeName">Dashboard</h1><p id="welcomeEmail" class="muted"></p></div><button id="logoutBtnStudent" class="btn btn-light">Log keluar</button></div>
-    <div id="noClass" class="panel hidden"><h2>Sertai kelas</h2><p class="muted">Masukkan kod jemputan yang diberikan oleh wakil kelas atau pentadbir.</p><div class="inline-form"><input id="inviteCode" placeholder="Contoh: RBT26ABCD"><button id="joinBtn" class="btn">Sertai kelas</button></div><div id="joinMessage" class="small"></div></div>
+    <div id="previewBanner" class="preview-banner hidden">
+      <div><strong>🔍 Mod pratonton</strong> <span id="previewInfo"></span></div>
+      <div class="preview-actions">
+        <label class="small">Peranan <select id="previewRoleSwitch"></select></label>
+        <label class="small check"><input type="checkbox" id="previewCommit"> Simpan perubahan kelas sebenar</label>
+        <button id="exitPreviewBtn" class="btn btn-small">Keluar pratonton</button>
+      </div>
+    </div>
+    <div class="welcome"><div><span class="eyebrow">RUANG KERJA KELAS</span><h1 id="welcomeName">Dashboard</h1><p id="welcomeEmail" class="muted"></p></div><button id="logoutBtnStudent" class="btn btn-light">Log keluar</button></div>
+    <div id="noClass" class="panel hidden"><h2>Sertai kelas</h2><p class="muted">Masukkan kod jemputan yang diberikan oleh wakil kelas atau pentadbir.</p><div class="inline-form"><input id="inviteCode" placeholder="Contoh: C1A2B3C4"><button id="joinBtn" class="btn">Sertai kelas</button></div><div id="joinMessage" class="small"></div></div>
     <div id="classArea" class="hidden">
-      <div class="class-head panel"><div><span class="eyebrow">KELAS AKTIF</span><h2 id="className"></h2><p id="classCode" class="muted"></p></div><span class="pill">Ahli kelas</span></div>
-      <nav class="tabs"><button class="student-tab active" data-tab="overview">Ringkasan</button><button class="student-tab" data-tab="schedule">Jadual</button><button class="student-tab" data-tab="assignments">Tugasan PB</button></nav>
-      <section id="student-tab-overview" class="student-tab-content"><div class="stats"><article class="stat"><span>Subjek</span><b>—</b></article><article class="stat"><span>Tugasan PB</span><b>—</b></article><article class="stat"><span>Jadual</span><b>—</b></article></div><div class="panel"><h3>Maklumat semester</h3><p class="muted">Data akademik kelas akan dipaparkan di sini apabila semester dan subjek telah dikonfigurasi.</p></div></section>
-      <section id="student-tab-schedule" class="student-tab-content hidden"><div class="panel"><h3>Jadual kelas</h3><p class="muted">Jadual kelas akan dipaparkan di sini.</p></div></section>
-      <section id="student-tab-assignments" class="student-tab-content hidden"><div class="panel"><h3>Penilaian Berterusan</h3><p class="muted">Senarai PB akan dipaparkan di sini.</p></div></section>
+      <div class="class-head panel"><div><span class="eyebrow">KELAS AKTIF</span><h2 id="className"></h2><p id="classCode" class="muted"></p></div>
+        <div class="class-head-right"><select id="classSwitch" class="hidden"></select><select id="semesterSwitch" class="hidden"></select><span id="rolePill" class="pill">Ahli kelas</span></div></div>
+      <nav class="tabs"><button class="student-tab active" data-tab="overview">Ringkasan</button><button class="student-tab" data-tab="schedule">Jadual</button><button class="student-tab" data-tab="assignments">Tugasan PB</button><button class="student-tab" data-tab="calendar">Kalendar</button></nav>
+
+      <section id="student-tab-overview" class="student-tab-content">
+        <div id="overviewStats" class="stats"></div>
+        <div class="panel"><h3>Tarikh akan datang</h3><div id="overviewUpcoming"></div></div>
+        <div class="panel"><h3>Subjek semester</h3><div class="table-wrap"><table><thead><tr><th>Kod</th><th>Subjek</th><th>Pensyarah</th><th>PB</th><th>Siap</th></tr></thead><tbody id="overviewSubjects"></tbody></table></div></div>
+      </section>
+
+      <section id="student-tab-schedule" class="student-tab-content hidden">
+        <div class="panel"><h3>Jadual kelas</h3><div id="scheduleList"></div></div>
+        <details id="sessionFormWrap" class="panel hidden"><summary id="sessionFormTitle">➕ Tambah sesi jadual</summary>
+          <form id="sessionForm" class="form-stack">
+            <label>Subjek <select id="sessSubject" required></select></label>
+            <div class="two-fields"><label>Tarikh <input id="sessDate" type="date" required></label><label>Bilik / pautan <input id="sessRoom" placeholder="Contoh: Bilik 3"></label></div>
+            <div class="two-fields"><label>Masa mula <input id="sessStart" type="time" required></label><label>Masa tamat <input id="sessEnd" type="time" required></label></div>
+            <div class="two-fields"><label>Mod <select id="sessMode"><option>Bersemuka</option><option>Dalam talian</option><option>Hibrid</option></select></label><label>Jenis <select id="sessType"><option>Kuliah</option><option>Tutorial</option><option>Amali</option><option>Lain-lain</option></select></label></div>
+            <label id="sessReasonWrap" class="hidden">Sebab perubahan <input id="sessReason" placeholder="Contoh: pindah bilik"></label>
+            <div class="btn-row"><button class="btn" type="submit" id="sessSubmit">Simpan sesi</button><button class="btn btn-light hidden" type="button" id="sessCancel">Batal edit</button></div>
+            <div id="sessMsg" class="small form-message"></div>
+          </form></details>
+      </section>
+
+      <section id="student-tab-assignments" class="student-tab-content hidden">
+        <div class="panel"><div class="filter-row"><h3>Penilaian Berterusan (PB)</h3>
+          <div class="btn-row"><select id="pbSubjectFilter"></select><select id="pbStatusFilter"><option value="all">Semua</option><option value="open">Belum siap</option><option value="done">Selesai</option></select></div></div>
+          <div id="assignmentList"></div></div>
+        <details id="assignmentFormWrap" class="panel hidden"><summary>➕ Terbitkan PB baharu</summary>
+          <form id="assignmentForm" class="form-stack">
+            <label>Subjek <select id="pbSubject" required></select></label>
+            <label>Tajuk <input id="pbTitle" required placeholder="Contoh: Penulisan RPH"></label>
+            <div class="two-fields"><label>Kod PB <input id="pbCode" placeholder="PB03"></label><label>Jenis <input id="pbType" placeholder="Penulisan"></label></div>
+            <div class="two-fields"><label>Markah (%) <input id="pbMarks" type="number" min="0" max="100" value="0"></label><label>Kaedah hantar <input id="pbMethod" placeholder="Manual"></label></div>
+            <div class="two-fields"><label>Tarikh mula <input id="pbStart" type="date"></label><label>Tarikh hantar <input id="pbDue" type="date"></label></div>
+            <label>Penerangan <textarea id="pbDesc" rows="2"></textarea></label>
+            <button class="btn" type="submit">Terbitkan PB</button><div id="pbMsg" class="small form-message"></div>
+          </form></details>
+      </section>
+
+      <section id="student-tab-calendar" class="student-tab-content hidden">
+        <div class="panel"><h3>Kalendar &amp; tarikh penting</h3><div id="calendarList"></div></div>
+        <details id="eventFormWrap" class="panel hidden"><summary>➕ Tambah acara kalendar</summary>
+          <form id="eventForm" class="form-stack">
+            <label>Tajuk <input id="evTitle" required placeholder="Contoh: Taklimat PBS"></label>
+            <div class="two-fields"><label>Kategori <select id="evCategory"><option>academic</option><option>PBS</option><option>Kokurikulum</option><option>Cuti</option><option>Lain-lain</option></select></label><label>Subjek (pilihan) <select id="evSubject"></select></label></div>
+            <div class="two-fields"><label>Tarikh mula <input id="evStart" type="date" required></label><label>Tarikh tamat <input id="evEnd" type="date"></label></div>
+            <label>Penerangan <textarea id="evDesc" rows="2"></textarea></label>
+            <button class="btn" type="submit">Tambah acara</button><div id="evMsg" class="small form-message"></div>
+          </form></details>
+      </section>
     </div>
   </section>
 </section>
 </main>
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 <footer>MySemester • Asia/Kuala_Lumpur • Academic information workspace</footer>
 <iframe name="apiFrame" id="apiFrame" class="hidden"></iframe>
 <script src="assets/app.js"></script>
