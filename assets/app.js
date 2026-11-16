@@ -21,12 +21,86 @@ let roleTestContextData = null;
 let activeTestSemesterId = null;
 let activeRoleLabTab = 'dashboard';
 let roleLabEditing = null;
+let workspaceData = null;
+let activeNav = 'overview';
+let isSystemAdminCurrent = false;
 
 const $ = (selector) => document.querySelector(selector);
 function show(selector, visible) {
   const el=$(selector);
   if(el) el.classList.toggle('hidden', !visible);
 }
+function rolePermission(role, permission) {
+  if(currentClass&&String(currentClass.memberRole||'').toLowerCase()===String(role||'').toLowerCase()&&Array.isArray(currentClass.permissions)) {
+    return currentClass.permissions.includes(permission);
+  }
+  const permissions={
+    student:['class.view','semester.view','schedule.view','pb.view','pb.progress.update','resources.view','calendar.view'],
+    pic:['class.view','semester.view','schedule.view','schedule.edit','schedule.delete','pb.view','resources.view','calendar.view','calendar.create','members.view','reports.view'],
+    lecturer:['class.view','semester.view','schedule.view','schedule.edit','schedule.verify','schedule.delete','pb.view','pb.create','pb.edit','pb.delete','pb.marks.manage','resources.view','resources.manage','resources.delete','calendar.view','calendar.create','calendar.edit','calendar.delete','members.view','reports.view'],
+    ko:['class.view','semester.view','semester.manage','schedule.view','schedule.edit','schedule.verify','schedule.delete','pb.view','pb.create','pb.edit','pb.delete','resources.view','resources.manage','resources.delete','calendar.view','calendar.create','calendar.edit','calendar.delete','members.view','members.roles.manage','reports.view','notifications.manage'],
+    class_admin:['class.activate','class.view','semester.view','semester.manage','schedule.view','schedule.edit','schedule.verify','schedule.delete','pb.view','pb.create','pb.edit','pb.delete','pb.marks.manage','resources.view','resources.manage','resources.delete','calendar.view','calendar.create','calendar.edit','calendar.delete','members.view','members.roles.manage','reports.view','notifications.manage']
+  };
+  const normalized=String(role||'').toLowerCase()==='admin'?'class_admin':String(role||'').toLowerCase();
+  return (permissions[normalized]||[]).includes(permission);
+}
+function setNavigationAvailability(isLoggedIn,isSystemAdmin,hasClass) {
+  const allowed=isLoggedIn
+    ? (isSystemAdmin?['overview','classes','preview','users','data','guide']:
+      ['overview','schedule','assignments','calendar','resources'])
+    : ['overview','classes','schedule','assignments','calendar','resources','preview','users','data','guide'];
+  document.querySelectorAll('[data-nav]').forEach(button=>{
+    const key=button.dataset.nav;
+    button.classList.toggle('hidden',!allowed.includes(key));
+    button.disabled=!!isLoggedIn&&!isSystemAdmin&&!hasClass&&key!=='overview';
+  });
+  document.querySelectorAll('.nav-section-title').forEach((el,index)=>{
+    el.classList.toggle('hidden',isLoggedIn&&!isSystemAdmin&&index!==0);
+  });
+  show('#userProfileBadge',isLoggedIn);
+  show('#currentSessionBadge',isLoggedIn);
+  show('#logoutBtn',isLoggedIn);
+  show('.header-search',isLoggedIn);
+  show('#clearCacheBtn',isLoggedIn&&isSystemAdmin);
+  document.querySelectorAll('#filterToolbar .filter-item').forEach(item=>{
+    item.classList.toggle('hidden',!isLoggedIn||isSystemAdmin);
+  });
+}
+function navigateTo(key) {
+  const panel=$('#panel-'+key);
+  if(!$('#appView') || $('#appView').classList.contains('hidden')) {
+    const requestedPage=key;
+    key='overview';
+    show('#loginView',true);
+    if(requestedPage!=='overview') showToast('Sila log masuk untuk membuka fungsi ini.','error');
+  } else if(key!=='overview'&&!panel) {
+    key='overview';
+  } else if(key!=='overview'&&panel?.classList.contains('hidden')&&panel.dataset.navDisabled==='true') {
+    key='overview';
+  }
+  activeNav=key;
+  document.querySelectorAll('[data-nav]').forEach(button=>button.classList.toggle('active',button.dataset.nav===key));
+  document.querySelectorAll('.app-panel').forEach(section=>section.classList.toggle('hidden',section.id!=='panel-'+key));
+  const sidebar=$('#appSidebar');
+  if(sidebar) sidebar.classList.remove('open');
+  $('#sidebarBackdrop')?.classList.remove('active');
+  if(key==='preview'&&isSystemAdminCurrent&&!roleMatrixData) loadRolePreviewConfig();
+  if(key==='data'&&isSystemAdminCurrent&&!adminDataSchema) loadAdminDataTable();
+}
+document.querySelectorAll('[data-nav]').forEach(button=>button.addEventListener('click',()=>navigateTo(button.dataset.nav)));
+$('#sidebarToggleBtn')?.addEventListener('click',()=>{
+  $('#appSidebar')?.classList.toggle('open');
+  $('#sidebarBackdrop')?.classList.toggle('active');
+});
+$('#sidebarBackdrop')?.addEventListener('click',()=>{
+  $('#appSidebar')?.classList.remove('open');
+  $('#sidebarBackdrop')?.classList.remove('active');
+});
+$('#mobileMoreBtn')?.addEventListener('click',()=>{
+  $('#appSidebar')?.classList.toggle('open');
+  $('#sidebarBackdrop')?.classList.toggle('active');
+});
+setNavigationAvailability(false,false,false);
 function setError(message) { $('#loginError').textContent = message || ''; }
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -66,6 +140,15 @@ function initializeGoogleSignIn() {
   });
 }
 window.addEventListener('load', () => {
+  if('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(()=>{const status=$('.system-status-indicator .status-text');if(status)status.textContent='Fast Cache Aktif • Online';})
+      .catch(error=>{
+        const status=$('.system-status-indicator .status-text');
+        if(status)status.textContent='Cache luar talian tidak tersedia';
+        console.error('MySemester service worker registration failed:',error);
+      });
+  }
   const manual=LOGIN_MODE==='manual';
   show('#manualLoginForm',manual);
   show('#googleLoginPanel',!manual);
@@ -79,14 +162,21 @@ window.addEventListener('load', () => {
 });
 
 async function completeLogin(result) {
-  currentUser=result.user;
-  authenticatedUser=result.user;
-  $('#welcomeName').textContent='Selamat datang, '+(currentUser.name||'pengguna');
-  $('#welcomeEmail').textContent=currentUser.email;
-  $('#profile').textContent=currentUser.email+(result.isSystemAdmin?' • SYSTEM ADMIN':'');
+  currentUser=result.user||{};
+  authenticatedUser=currentUser;
+  currentUser.name=currentUser.name||currentUser.fullName||currentUser.email||'Pengguna';
+  $('#welcomeName').textContent='Selamat datang, '+currentUser.name;
+  $('#welcomeEmail').textContent=currentUser.email||'';
   show('#loginView',false);
   show('#appView',true);
-  if(result.isSystemAdmin || result.workspace==='system_admin') {
+  const isSystemAdmin=!!(result.isSystemAdmin||result.workspace==='system_admin');
+  isSystemAdminCurrent=isSystemAdmin;
+  $('#headerUserName').textContent=currentUser.name;
+  $('#headerAvatar').textContent=(currentUser.name||currentUser.email||'M').trim().charAt(0).toUpperCase();
+  $('#headerUserRole').textContent=isSystemAdmin?'PENTADBIR':String(result.classes?.[0]?.memberRole||'PELAJAR').toUpperCase();
+  setNavigationAvailability(true,isSystemAdmin,!!result.classes?.length);
+  navigateTo('overview');
+  if(isSystemAdmin) {
     show('#adminView',true);
     show('#studentView',false);
     $('#adminWelcomeName').textContent=currentUser.name||currentUser.email;
@@ -95,16 +185,295 @@ async function completeLogin(result) {
   } else {
     show('#adminView',false);
     show('#studentView',true);
-    if(result.classes && result.classes.length) {
-      currentClass=result.classes[0];
-      $('#className').textContent=currentClass.className;
-      $('#classCode').textContent='Kod kelas: '+currentClass.classCode;
-      show('#classArea',true);show('#noClass',false);
-    } else {
+    workspaceData={classes:result.classes||[]};
+    populateWorkspaceFilters();
+    if(result.classes?.length) await loadStudentWorkspace();
+    else {
+      currentClass=null;
       show('#noClass',true);show('#classArea',false);
+      renderOverviewDashboard();
     }
   }
 }
+function populateWorkspaceFilters() {
+  const classes=workspaceData?.classes||[];
+  const classSelect=$('#filterClassSelect');
+  if(classSelect) {
+    classSelect.innerHTML=classes.map(c=>`<option value="${escapeHtml(c.classId)}">${escapeHtml(c.className)}</option>`).join('');
+    classSelect.value=currentClass?.classId||classes[0]?.classId||'';
+    classSelect.closest('.filter-item')?.classList.toggle('hidden',classes.length<2);
+  }
+  const selected=classes.find(c=>c.classId===classSelect?.value)||classes[0]||null;
+  currentClass=selected;
+  const semesterSelect=$('#filterSemesterSelect');
+  const semesters=selected?.semesters||[];
+  if(semesterSelect) {
+    semesterSelect.innerHTML=semesters.map(s=>`<option value="${escapeHtml(s.semesterId)}">${escapeHtml(s.semesterName)}${s.academicSession?' · '+escapeHtml(s.academicSession):''}</option>`).join('');
+    const active=semesters.find(s=>s.status==='active')||semesters[0];
+    semesterSelect.value=workspaceData?.semesterId&&semesters.some(s=>s.semesterId===workspaceData.semesterId)
+      ?workspaceData.semesterId:(active?.semesterId||'');
+    semesterSelect.closest('.filter-item')?.classList.toggle('hidden',semesters.length<2);
+  }
+  if(selected) {
+    $('#className').textContent=selected.className;
+    $('#classCode').textContent='Kod kelas: '+(selected.classCode||'');
+    $('#rolePill').textContent=selected.memberRole||'';
+    $('#sessionBadgeYear').textContent=semesters.find(s=>s.semesterId===semesterSelect?.value)?.academicSession||'—';
+  }
+  show('#classArea',!!selected);
+  show('#noClass',!selected);
+}
+function subjectOptions(classInfo,semesterId) {
+  return (classInfo?.semesterSubjects||[]).filter(s=>!semesterId||s.semesterId===semesterId);
+}
+function populateSubjectSelects() {
+  const semesterId=$('#filterSemesterSelect')?.value||'';
+  const subjects=subjectOptions(currentClass,semesterId);
+  const options=subjects.map(s=>`<option value="${escapeHtml(s.semesterSubjectId)}">${escapeHtml([s.subjectCode,s.subjectName].filter(Boolean).join(' · ')||s.subjectId)}</option>`).join('');
+  ['#sessSubject','#pbSubject','#evSubject','#pbSubjectFilter'].forEach(selector=>{
+    const select=$(selector);
+    if(!select)return;
+    const allOption=selector==='#pbSubjectFilter'?'<option value="all">Semua subjek</option>':'';
+    select.innerHTML=allOption+options;
+    select.disabled=!subjects.length;
+  });
+}
+function currentClassRole() {
+  return String(currentClass?.memberRole||'').toLowerCase();
+}
+async function loadStudentWorkspace() {
+  populateWorkspaceFilters();
+  const classId=currentClass?.classId;
+  const semesterId=$('#filterSemesterSelect')?.value;
+  if(!classId||!semesterId) {
+    workspaceData={...(workspaceData||{}),schedules:[],assignments:[],progress:[],events:[],resources:[]};
+    populateSubjectSelects();
+    renderStudentWorkspace();
+    return;
+  }
+  workspaceData={...(workspaceData||{}),semesterId};
+  populateSubjectSelects();
+  const params={classId,semesterId};
+  try {
+    const [schedules,assignments,events]=await Promise.all([
+      api('listSchedules',params),
+      api('listAssignments',params),
+      api('listCalendarEvents',params)
+    ]);
+    const resources=await Promise.all(subjectOptions(currentClass,semesterId).map(subject=>
+      api('listResources',{classId,semesterSubjectId:subject.semesterSubjectId})
+    ));
+    workspaceData={
+      ...workspaceData,
+      schedules:schedules.items||[],
+      assignments:assignments.items||[],
+      progress:assignments.progress||[],
+      events:events.items||[],
+      resources:resources.flatMap(result=>result.items||[])
+    };
+    renderStudentWorkspace();
+  } catch(error) {
+    workspaceData={...(workspaceData||{}),schedules:[],assignments:[],progress:[],events:[],resources:[]};
+    renderStudentWorkspace(error.message);
+    showToast('Gagal memuatkan data kelas: '+error.message,'error');
+  }
+}
+function renderStudentWorkspace(errorMessage='') {
+  const data=workspaceData||{};
+  const role=currentClassRole();
+  const progressByAssignment=Object.fromEntries((data.progress||[]).map(p=>[p.assignment_id,p]));
+  const subjects=Object.fromEntries((currentClass?.semesterSubjects||[]).map(s=>[s.semesterSubjectId,s]));
+  const year=$('#filterYearSelect')?.value||'all';
+  const category=$('#filterCategorySelect')?.value||'all';
+  const status=$('#filterStatusSelect')?.value||'all';
+  const inYear=value=>year==='all'||!value||String(value).slice(0,4)===year;
+  const canSchedule=rolePermission(role,'schedule.edit');
+  const canCreatePb=rolePermission(role,'pb.create');
+  const canCreateEvent=rolePermission(role,'calendar.create');
+  show('#sessionFormWrap',canSchedule);
+  show('#scheduleAddBtn',canSchedule);
+  show('#assignmentFormWrap',canCreatePb);
+  show('#assignmentAddBtn',canCreatePb);
+  show('#eventFormWrap',canCreateEvent);
+  show('#eventAddBtn',canCreateEvent);
+  const assignmentFilter=$('#pbSubjectFilter')?.value||'all';
+  const assignments=(data.assignments||[]).filter(a=>{
+    const progress=progressByAssignment[a.assignment_id];
+    const progressState=progress?.progress_status==='completed'?'completed':'active';
+    const matchesStatus=status==='all'||progressState===status;
+    const matchesProgressFilter=($('#pbStatusFilter')?.value||'all')==='all'||
+      (($('#pbStatusFilter')?.value==='done')===(progressState==='completed'));
+    return inYear(a.due_at)&&matchesStatus&&matchesProgressFilter&&(category==='all'||category==='pb');
+  });
+  const filteredAssignments=assignments.filter(a=>assignmentFilter==='all'||a.semester_subject_id===assignmentFilter);
+  const schedules=(data.schedules||[]).filter(s=>inYear(s.session_date)&&(category==='all'||category==='academic'));
+  const events=(data.events||[]).filter(event=>{
+    const type=String(event.event_category||'').toLowerCase();
+    const matchesCategory=category==='all'||(category==='pb'?(type.includes('pb')||type.includes('pbs')||type.includes('penilaian')):type.includes(category));
+    return matchesCategory&&inYear(event.start_at);
+  });
+  const resources=(data.resources||[]).filter(resource=>inYear(resource.created_at)&&(category==='all'||category==='academic'));
+  $('#scheduleList').innerHTML=errorMessage?`<p class="form-message error">${escapeHtml(errorMessage)}</p>`:
+    schedules.length?schedules.map(s=>`<article class="role-lab-list-row">
+      <div><strong>${escapeHtml(subjects[s.semester_subject_id]?.subjectName||'Sesi kuliah')}</strong>
+      <small>${escapeHtml(s.session_type||'Kuliah')} · ${escapeHtml(s.room||s.delivery_mode||'')}</small></div>
+      <time>${escapeHtml(s.session_date||'')} · ${escapeHtml(s.start_time||'')}–${escapeHtml(s.end_time||'')}</time>
+      <span class="status ${s.verification_status==='VERIFIED'?'active':'draft'}">${escapeHtml(s.verification_status||s.status||'Aktif')}</span>
+    </article>`).join(''):'<p class="muted">Tiada sesi jadual direkodkan untuk semester ini.</p>';
+  $('#assignmentList').innerHTML=errorMessage?`<p class="form-message error">${escapeHtml(errorMessage)}</p>`:
+    filteredAssignments.length?filteredAssignments.map(a=>{
+      const progress=progressByAssignment[a.assignment_id]||{};
+      const progressEditor=rolePermission(role,'pb.progress.update')?`<form class="assignment-progress-form" data-assignment-id="${escapeHtml(a.assignment_id)}">
+        <label>Status kemajuan <select name="progress_status">
+          ${[['not_started','Belum bermula'],['in_progress','Sedang dibuat'],['nearly_done','Hampir siap'],['completed','Selesai']].map(([value,label])=>`<option value="${value}" ${progress.progress_status===value?'selected':''}>${label}</option>`).join('')}
+        </select></label>
+        <label>Kemajuan (%) <input name="progress_percentage" type="number" min="0" max="100" value="${escapeHtml(progress.progress_percentage||0)}"></label>
+        <label>Nota peribadi <input name="personal_notes" value="${escapeHtml(progress.personal_notes||'')}"></label>
+        <button class="btn btn-small" type="submit">Simpan kemajuan</button>
+      </form>`:'';
+      return `<article class="role-lab-card assignment-card"><div class="role-lab-card-head"><div>
+        <h3>${escapeHtml(a.title)}</h3><p class="muted small">${escapeHtml(subjects[a.semester_subject_id]?.subjectName||'')} · ${escapeHtml(a.assignment_type||'PB')} · ${escapeHtml(a.marks_percentage||0)}%</p>
+        </div><span class="status ${progress.progress_status==='completed'?'active':'draft'}">${escapeHtml(progress.progress_status||a.status||'published')}</span></div>
+        <p>${escapeHtml(a.description||'')}</p><p class="muted small">Tarikh hantar: ${escapeHtml(a.due_at||'—')} · Kaedah: ${escapeHtml(a.submission_method||'—')}</p>${progressEditor}</article>`;
+    }).join(''):'<p class="muted">Tiada tugasan PB untuk semester ini.</p>';
+  const sortedEvents=events.slice().sort((a,b)=>String(a.start_at||'').localeCompare(String(b.start_at||'')));
+  $('#calendarList').innerHTML=errorMessage?`<p class="form-message error">${escapeHtml(errorMessage)}</p>`:
+    sortedEvents.length?sortedEvents.map(event=>`<article class="role-lab-list-row"><div><strong>${escapeHtml(event.title)}</strong><small>${escapeHtml(event.event_category||'Acara')}${event.description?' · '+escapeHtml(event.description):''}</small></div><time>${escapeHtml(event.start_at||'')}${event.end_at?' – '+escapeHtml(event.end_at):''}</time></article>`).join(''):'<p class="muted">Tiada acara kalendar untuk semester ini.</p>';
+  $('#resourcesList').innerHTML=errorMessage?`<p class="form-message error">${escapeHtml(errorMessage)}</p>`:
+    resources.length?resources.map(resource=>{
+      const link=resource.url||resource.storage_file_id||'';
+      return `<article class="role-lab-list-row"><div><strong>${escapeHtml(resource.resource_name||'Nota pembelajaran')}</strong><small>${escapeHtml(resource.description||'')}</small></div>
+        ${/^https?:\/\//i.test(link)?`<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Buka sumber</a>`:''}</article>`;
+    }).join(''):'<p class="muted">Tiada nota atau sumber dikongsi untuk semester ini.</p>';
+  renderOverviewDashboard({...data,schedules,assignments,events,resources});
+}
+function renderOverviewDashboard(viewData) {
+  const data=viewData||workspaceData||{};
+  const stats=adminData?.stats;
+  const visibleAssignmentIds=new Set((data.assignments||[]).map(a=>a.assignment_id));
+  const completed=(data.progress||[]).filter(p=>visibleAssignmentIds.has(p.assignment_id)&&p.progress_status==='completed').length;
+  const values=stats?[
+    stats.totalClasses??0,'—','—',stats.activeMembers??0,'—','—'
+  ]:[
+    (data.classes||[]).length,(data.assignments||[]).length,(data.schedules||[]).length,
+    completed,(data.events||[]).length,(data.resources||[]).length
+  ];
+  const labels=stats
+    ?['Kelas','Tugasan PB','Sesi kuliah','Ahli kelas','Tarikh penting','Nota & sumber']
+    :['Kelas','Tugasan PB','Sesi kuliah','PB selesai','Tarikh penting','Nota & sumber'];
+  const subtitles=stats
+    ?[`${stats.activeClasses||0} kelas aktif`,'Tiada data tersedia','Tiada data tersedia',`${stats.totalUsers||0} pengguna berdaftar`,'Tiada data tersedia','Tiada data tersedia']
+    :['Kelas disertai','Dalam semester dipilih','Dalam semester dipilih','Daripada PB ditapis','Dalam semester dipilih','Dalam semester dipilih'];
+  document.querySelectorAll('.kpi-card').forEach((card,index)=>{
+    const value=card.querySelector('.kpi-number');
+    const title=card.querySelector('.kpi-title');
+    const subtitle=card.querySelector('.kpi-subtext');
+    if(value)value.textContent=String(values[index]??0);
+    if(title)title.textContent=labels[index];
+    if(subtitle)subtitle.textContent=subtitles[index]||'';
+    card.querySelector('.kpi-badge')?.classList.add('hidden');
+  });
+  const replaceHeading=(selector,text)=>{const heading=$(selector)?.querySelector('h3');if(heading)heading.textContent=text;};
+  replaceHeading('#trendChartCard','Ringkasan semester');
+  replaceHeading('#donutChartCard','Kelas dan semester');
+  replaceHeading('#top5Card','Tarikh terdekat');
+  replaceHeading('#stackedBarCard','Jadual terkini');
+  $('#trendChartCard .trend-legend').innerHTML='<span class="legend-pill"><span class="legend-dot blue"></span> Jadual</span><span class="legend-pill"><span class="legend-dot amber"></span> Tugasan PB</span><span class="legend-pill"><span class="legend-dot green"></span> Acara</span>';
+  $('#stackedBarCard .trend-legend').innerHTML='<span class="legend-pill">Sesi kuliah dalam semester dipilih</span>';
+  $('#achievementCard .subtab-pill-row').innerHTML='<span class="eyebrow">KEMAJUAN TUGASAN</span>';
+  $('#resourcesCard .subtab-pill-row').innerHTML='<span class="eyebrow">SUMBER PEMBELAJARAN</span>';
+  $('#trendChartWrap').innerHTML=stats
+    ?`<div class="role-lab-summary"><span>Kelas aktif</span><strong>${stats.activeClasses||0}</strong></div>
+      <div class="role-lab-summary"><span>Jumlah pengguna</span><strong>${stats.totalUsers||0}</strong></div>
+      <div class="role-lab-summary"><span>Keahlian aktif</span><strong>${stats.activeMembers||0}</strong></div>`
+    :`<div class="role-lab-summary"><span>Semester</span><strong>${escapeHtml(currentClass?.semesters?.find(s=>s.semesterId===data.semesterId)?.semesterName||'—')}</strong></div>
+      <div class="role-lab-summary"><span>Kelas</span><strong>${escapeHtml(currentClass?.className||'—')}</strong></div>
+      <div class="role-lab-summary"><span>Peranan</span><strong>${escapeHtml(currentClass?.memberRole||'')}</strong></div>`;
+  $('#donutTotalNumber').textContent=String(stats?.totalClasses??(data.classes||[]).length);
+  const classes=stats?(adminData?.classes||[]):(data.classes||[]);
+  $('#donutLegendList').innerHTML=classes.map(c=>`<div class="role-lab-list-row"><strong>${escapeHtml(c.className)}</strong><span>${(c.semesters||[]).length} semester</span></div>`).join('')||
+    `<p class="muted small">${escapeHtml(currentClass?.className||'Log masuk untuk melihat kelas anda.')}</p>`;
+  const today=new Date().toISOString().slice(0,10);
+  const upcoming=[...(data.assignments||[]).filter(a=>a.due_at&&String(a.due_at)>=today).map(a=>({title:a.title,date:a.due_at,type:'PB'})),
+    ...(data.events||[]).filter(e=>e.start_at&&String(e.start_at)>=today).map(e=>({title:e.title,date:e.start_at,type:e.event_category||'Acara'}))]
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(0,5);
+  $('#top5List').innerHTML=upcoming.map(item=>`<div class="role-lab-list-row"><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.type)}</small></div><time>${escapeHtml(item.date)}</time></div>`).join('')||
+    '<p class="muted small">Tiada tarikh terdekat direkodkan.</p>';
+  $('#stackedBarList').innerHTML=(data.schedules||[]).slice(0,5).map(s=>`<div class="role-lab-list-row"><div><strong>${escapeHtml(s.session_date||'')}</strong><small>${escapeHtml(s.session_type||'Kuliah')} · ${escapeHtml(s.room||'')}</small></div><time>${escapeHtml(s.start_time||'')}</time></div>`).join('')||
+    '<p class="muted small">Tiada sesi jadual direkodkan.</p>';
+  $('#achievementColumnBody').innerHTML=(data.assignments||[]).slice(0,5).map(a=>{
+    const progress=(data.progress||[]).find(p=>p.assignment_id===a.assignment_id);
+    const pct=Math.max(0,Math.min(100,Number(progress?.progress_percentage)||0));
+    return `<div class="role-lab-summary"><span>${escapeHtml(a.title)}</span><strong>${pct}%</strong></div><progress max="100" value="${pct}"></progress>`;
+  }).join('')||'<p class="muted small">Tiada tugasan untuk dipaparkan.</p>';
+  $('#resourceColumnBody').innerHTML=(data.resources||[]).slice(0,5).map(r=>`<div class="role-lab-list-row"><strong>${escapeHtml(r.resource_name||'Sumber')}</strong><span>${escapeHtml(r.description||'')}</span></div>`).join('')||
+    '<p class="muted small">Tiada sumber dikongsi.</p>';
+}
+$('#filterClassSelect')?.addEventListener('change',()=>{
+  workspaceData={...(workspaceData||{}),semesterId:''};
+  populateWorkspaceFilters();
+  loadStudentWorkspace();
+});
+$('#filterSemesterSelect')?.addEventListener('change',loadStudentWorkspace);
+$('#pbSubjectFilter')?.addEventListener('change',()=>renderStudentWorkspace());
+$('#pbStatusFilter')?.addEventListener('change',()=>renderStudentWorkspace());
+['#filterYearSelect','#filterCategorySelect','#filterStatusSelect'].forEach(selector=>{
+  $(selector)?.addEventListener('change',()=>renderStudentWorkspace());
+});
+$('#filterHomeBtn')?.addEventListener('click',()=>navigateTo('overview'));
+function searchWorkspace(query) {
+  const q=String(query||'').trim().toLowerCase();
+  const targets=[
+    ['classes','#adminClassList','classes'],
+    ['schedule','#scheduleList','schedule'],
+    ['assignments','#assignmentList','assignments'],
+    ['calendar','#calendarList','calendar'],
+    ['resources','#resourcesList','resources'],
+    ['users','#adminUserList','users'],
+    ['data','#adminDataList','data']
+  ];
+  let firstMatch=null;
+  targets.forEach(([key,selector,panel])=>{
+    const root=$(selector);
+    if(!root)return;
+    const children=Array.from(root.children);
+    children.forEach(item=>{
+      const match=!q||item.textContent.toLowerCase().includes(q);
+      item.classList.toggle('hidden',!match);
+      if(q&&match&&!firstMatch)firstMatch=panel;
+    });
+  });
+  if(q&&firstMatch)navigateTo(firstMatch);
+}
+$('#globalSearch')?.addEventListener('input',e=>searchWorkspace(e.target.value));
+$('#globalSearch')?.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){e.target.value='';searchWorkspace('');e.target.blur();}
+});
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k') {
+    e.preventDefault();
+    $('#globalSearch')?.focus();
+  }
+});
+$('#assignmentList')?.addEventListener('submit',async e=>{
+  const form=e.target.closest('.assignment-progress-form');
+  if(!form)return;
+  e.preventDefault();
+  const values=Object.fromEntries(new FormData(form).entries());
+  const button=form.querySelector('button[type="submit"]');
+  button.disabled=true;
+  try {
+    await api('updateProgress',{assignmentId:form.dataset.assignmentId,progress:{
+      progress_status:values.progress_status,progress_percentage:Number(values.progress_percentage),
+      personal_notes:values.personal_notes
+    }});
+    showToast('Kemajuan tugasan berjaya disimpan.');
+    await loadStudentWorkspace();
+  } catch(error) {
+    showToast('Gagal menyimpan kemajuan: '+error.message,'error');
+    button.disabled=false;
+  }
+});
 async function onGoogleCredential(response) {
   idToken=response.credential;
   setError('');
@@ -222,6 +591,7 @@ function renderAdminStats() {
     ['Pengguna berdaftar',s.totalUsers||0,'users'],
     ['Keahlian kelas',s.activeMembers||0,'user-check']
   ].map(x=>`<article class="admin-stat"><span>${x[0]}</span><b>${x[1]}</b></article>`).join('');
+  renderOverviewDashboard();
 }
 function renderAdminClasses() {
   const classes=adminData.classes||[];
@@ -870,7 +1240,7 @@ $('#startPreviewBtn')?.addEventListener('click',()=>startRolePreview());
 $('#previewThisClassBtn')?.addEventListener('click',()=>{
   populatePreviewClasses();
   if(selectedAdminClassId) $('#previewClass').value=selectedAdminClassId;
-  document.querySelector('[data-admin-tab="preview"]')?.click();
+  navigateTo('preview');
 });
 $('#previewRoleSwitch')?.addEventListener('change',e=>startRolePreview(e.target.value));
 $('#semesterSwitch')?.addEventListener('change',e=>{activeTestSemesterId=e.target.value;renderRoleTestWorkspace();});
@@ -920,7 +1290,8 @@ $('#sessionForm')?.addEventListener('submit',async e=>{
   try {
     const result=await workspaceApi('createScheduleSession',data);
     $('#sessMsg').textContent=result.message||'Sesi berjaya direkodkan.';
-    e.target.reset();await loadRoleTestContext();
+    e.target.reset();
+    if(activeRoleTest) await loadRoleTestContext(); else await loadStudentWorkspace();
   } catch(error) { $('#sessMsg').textContent=error.message; }
 });
 $('#assignmentForm')?.addEventListener('submit',async e=>{
@@ -933,21 +1304,24 @@ $('#assignmentForm')?.addEventListener('submit',async e=>{
   try {
     const result=await workspaceApi('createAssignment',data);
     $('#pbMsg').textContent=result.message||'PB berjaya diterbitkan.';
-    e.target.reset();await loadRoleTestContext();
+    e.target.reset();
+    if(activeRoleTest) await loadRoleTestContext(); else await loadStudentWorkspace();
   } catch(error) { $('#pbMsg').textContent=error.message; }
 });
 $('#eventForm')?.addEventListener('submit',async e=>{
   e.preventDefault();
-  const sem=(roleTestContextData?.semesters||[]).find(x=>x.semester_id===activeTestSemesterId)||(roleTestContextData?.semesters||[])[0];
-  if(!sem) { $('#evMsg').textContent='Tiada semester tersedia untuk acara ini.';return; }
-  const data={semesterId:sem.semester_id,semesterSubjectId:$('#evSubject').value||'',
+  const testSemester=(roleTestContextData?.semesters||[]).find(x=>x.semester_id===activeTestSemesterId)||(roleTestContextData?.semesters||[])[0];
+  const semId=activeRoleTest?testSemester?.semester_id:($('#filterSemesterSelect')?.value||'');
+  if(!semId) { $('#evMsg').textContent='Tiada semester tersedia untuk acara ini.';return; }
+  const data={semesterId:semId,semesterSubjectId:$('#evSubject').value||'',
     title:$('#evTitle').value.trim(),eventCategory:$('#evCategory').value,
     startAt:$('#evStart').value,endAt:$('#evEnd').value,description:$('#evDesc').value};
   $('#evMsg').textContent='Menyimpan acara kalendar...';
   try {
     const result=await workspaceApi('createCalendarEvent',data);
     $('#evMsg').textContent=result.message||'Acara berjaya ditambah.';
-    e.target.reset();await loadRoleTestContext();
+    e.target.reset();
+    if(activeRoleTest) await loadRoleTestContext(); else await loadStudentWorkspace();
   } catch(error) { $('#evMsg').textContent=error.message; }
 });
 
@@ -1044,7 +1418,12 @@ $('#roleLabContent')?.addEventListener('submit',async e=>{
 $('#joinBtn').addEventListener('click',async()=>{
   const code=$('#inviteCode').value.trim();
   $('#joinMessage').textContent='Memproses...';
-  try{const result=await api('joinClass',{inviteCode:code});$('#joinMessage').textContent=result.message;window.location.reload();}
+  try{
+    const result=await api('joinClass',{inviteCode:code});
+    $('#joinMessage').textContent=result.message||'Kelas berjaya disertai.';
+    const bootstrap=await api('bootstrap',{});
+    await completeLogin(bootstrap);
+  }
   catch(error){$('#joinMessage').textContent=error.message;}
 });
 document.querySelectorAll('.student-tab').forEach(button=>{
@@ -1063,20 +1442,33 @@ async function logoutMySemester(){
   }
   if(devToken) { try { await api('devLogout',{}); } catch(error) { console.warn('Unable to revoke development session:',error); } }
   idToken=null;devToken=null;currentUser=null;authenticatedUser=null;currentClass=null;adminData=null;
-  roleTestContextData=null;activeTestSemesterId=null;
+  isSystemAdminCurrent=false;
+  roleTestContextData=null;activeTestSemesterId=null;workspaceData=null;
   show('#appView',false);show('#loginView',true);
+  show('#studentView',false);show('#adminView',false);
+  setNavigationAvailability(false,false,false);
+  navigateTo('overview');
   if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();
+}
+async function refreshCurrentWorkspace() {
+  if(activeRoleTest) return loadRoleTestContext();
+  if(isSystemAdminCurrent) return loadAdminDashboard();
+  return loadStudentWorkspace();
 }
 $('#logoutBtn').addEventListener('click',logoutMySemester);
 $('#logoutBtnStudent').addEventListener('click',logoutMySemester);
-$('#refreshAdminBtn').addEventListener('click',loadAdminDashboard);
+$('#refreshAdminBtn').addEventListener('click',refreshCurrentWorkspace);
 $('#clearCacheBtn')?.addEventListener('click',async()=>{
   const btn=$('#clearCacheBtn');
   btn.disabled=true;btn.textContent='Mengosongkan...';
   try {
+    if('caches' in window) {
+      const cacheNames=await caches.keys();
+      await Promise.all(cacheNames.filter(name=>name.startsWith('mysemester-admin-')).map(name=>caches.delete(name)));
+    }
     const r=await api('clearCache',{});
     showToast(r.message||'Cache berjaya dikosongkan.');
-    await loadAdminDashboard();
+    await refreshCurrentWorkspace();
   } catch(err) {
     showToast('Gagal mengosongkan cache: '+err.message,true);
   } finally {

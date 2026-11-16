@@ -93,6 +93,7 @@ const ACTION_PERMISSION = {
   createAssignment:'pb.create',
   updateProgress:'pb.progress.update',
   listResources:'resources.view',
+  listCalendarEvents:'calendar.view',
   createCalendarEvent:'calendar.create',
   createSemester:'semester.manage',
   activateClass:'class.activate',
@@ -301,6 +302,7 @@ function dispatchAction_(u, action, d) {
     case 'updateProgress': return updateProgress_(u,d);
     case 'createAssignment': return createAssignment_(u,d);
     case 'listResources': return listResources_(u,d);
+    case 'listCalendarEvents': return listCalendarEvents_(u,d);
     case 'createCalendarEvent': return createCalendarEvent_(u,d);
     case 'getRoleMatrix': return getRoleMatrix_(u);
     case 'saveRoleMatrix': return saveRoleMatrix_(u,d);
@@ -1139,10 +1141,33 @@ function ensureSystemAdminRole_(userId) {
 
 function bootstrap_(u) {
   const memberships = getRows_('ClassMembers').filter(r => r.user_id === u.userId && r.membership_status === 'active');
+  const allSemesters = getRows_('Semesters');
+  const allSemesterSubjects = getRows_('SemesterSubjects');
+  const allSubjects = getRows_('Subjects');
   const classes = memberships.map(m => {
     const c = findBy_('Classes','class_id',m.class_id);
     const role=String(m.member_role||'').toLowerCase()==='admin'?'class_admin':String(m.member_role||'').toLowerCase();
-    return c && roleHasPermission_(role,'class.view') ? {classId:c.class_id,className:c.class_name,classCode:c.class_code,memberRole:m.member_role,status:c.status} : null;
+    if (!c || !roleHasPermission_(role,'class.view')) return null;
+    const semesters = allSemesters.filter(s => s.class_id === c.class_id);
+    const semesterIds = semesters.map(s => s.semester_id);
+    const semesterSubjects = allSemesterSubjects.filter(ss => semesterIds.includes(ss.semester_id));
+    return {
+      classId:c.class_id,className:c.class_name,classCode:c.class_code,
+      memberRole:m.member_role,status:c.status,
+      semesters:semesters.map(s=>({
+        semesterId:s.semester_id,semesterName:s.semester_name,
+        academicSession:s.academic_session,semesterNumber:s.semester_number,status:s.status
+      })),
+      permissions:ROLE_PERMISSION_DEFS.filter(permission=>roleHasPermission_(role,permission.id)).map(permission=>permission.id),
+      semesterSubjects:roleHasPermission_(role,'semester.view') ? semesterSubjects.map(ss=>{
+        const subject=allSubjects.find(x=>x.subject_id===ss.subject_id)||{};
+        return {
+          semesterSubjectId:ss.semester_subject_id,semesterId:ss.semester_id,
+          subjectId:ss.subject_id,subjectCode:subject.subject_code||'',
+          subjectName:subject.subject_name||'',lecturerUserId:ss.lecturer_user_id||''
+        };
+      }) : []
+    };
   }).filter(Boolean);
   const isSystemAdmin = isSystemAdmin_(u.userId);
   return {
@@ -1302,6 +1327,8 @@ function createSemester_(u,d) {
 
 function listSchedules_(u,d) {
   requireClassMember_(u.userId,d.classId);
+  const semester=findBy_('Semesters','semester_id',d.semesterId);
+  if (!semester || semester.class_id!==d.classId) throw new Error('Semester not found in this class.');
   const ssIds=getRows_('SemesterSubjects').filter(x=>x.semester_id===d.semesterId).map(x=>x.semester_subject_id);
   const rows=getRows_('ClassSessions').filter(x=>ssIds.includes(x.semester_subject_id));
   return {ok:true,items:rows};
@@ -1360,8 +1387,14 @@ function verifySchedule_(u,d) {
 
 function listAssignments_(u,d) {
   requireClassMember_(u.userId,d.classId);
+  const semester=findBy_('Semesters','semester_id',d.semesterId);
+  if (!semester || semester.class_id!==d.classId) throw new Error('Semester not found in this class.');
   const ssIds=getRows_('SemesterSubjects').filter(x=>x.semester_id===d.semesterId).map(x=>x.semester_subject_id);
-  return {ok:true,items:getRows_('Assignments').filter(x=>ssIds.includes(x.semester_subject_id) && x.status!=='cancelled')};
+  const items=getRows_('Assignments').filter(x=>ssIds.includes(x.semester_subject_id) && x.status!=='cancelled');
+  const assignmentIds=items.map(x=>x.assignment_id);
+  const progress=getRows_('StudentAssignmentProgress')
+    .filter(x=>x.user_id===u.userId && assignmentIds.includes(x.assignment_id));
+  return {ok:true,items:items,progress:progress};
 }
 
 function createAssignment_(u,d) {
@@ -1380,6 +1413,10 @@ function createAssignment_(u,d) {
 function updateProgress_(u,d) {
   const a=findBy_('Assignments','assignment_id',d.assignmentId);
   if (!a) throw new Error('Assignment not found.');
+  const semesterSubject=findBy_('SemesterSubjects','semester_subject_id',a.semester_subject_id);
+  const semester=semesterSubject&&findBy_('Semesters','semester_id',semesterSubject.semester_id);
+  if (!semester) throw new Error('Assignment semester not found.');
+  requireClassMember_(u.userId,semester.class_id);
   const exists=getRows_('StudentAssignmentProgress').find(x=>x.assignment_id===a.assignment_id && x.user_id===u.userId);
   const patch=d.progress||{};
   const status=['not_started','in_progress','nearly_done','completed'].includes(patch.progress_status)?patch.progress_status:'in_progress';
@@ -1391,8 +1428,20 @@ function updateProgress_(u,d) {
 
 function listResources_(u,d) {
   requireClassMember_(u.userId,d.classId);
-  const rows=getRows_('Resources').filter(r=>r.semester_subject_id===d.semesterSubjectId && r.visibility!=='personal');
+  const semesterSubject=findBy_('SemesterSubjects','semester_subject_id',d.semesterSubjectId);
+  const semester=semesterSubject&&findBy_('Semesters','semester_id',semesterSubject.semester_id);
+  if (!semester || semester.class_id!==d.classId) throw new Error('Subject not found in this class.');
+  const rows=getRows_('Resources').filter(r=>r.semester_subject_id===d.semesterSubjectId && r.visibility!=='personal' && r.visibility!=='archived');
   return {ok:true,items:rows};
+}
+
+function listCalendarEvents_(u,d) {
+  requireClassMember_(u.userId,d.classId);
+  const semester=findBy_('Semesters','semester_id',d.semesterId);
+  if (!semester || semester.class_id!==d.classId) throw new Error('Semester not found in this class.');
+  const items=getRows_('CalendarEvents')
+    .filter(x=>x.semester_id===d.semesterId && x.visibility!=='personal' && x.visibility!=='archived');
+  return {ok:true,items:items};
 }
 
 function createCalendarEvent_(u,d) {

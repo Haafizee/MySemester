@@ -54,7 +54,7 @@
     <!-- Center Interactive Search Bar -->
     <div class="header-search">
       <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-      <input type="search" id="globalSearch" placeholder="Cari inovasi, penyelidik, subjek, tugasan, dokumen..." autocomplete="off">
+      <input type="search" id="globalSearch" placeholder="Cari kelas, subjek, jadual, tugasan atau sumber..." autocomplete="off">
       <span class="search-shortcut">⌘K</span>
     </div>
 
@@ -279,11 +279,11 @@
               <div class="kpi-icon-box blue">💡</div>
               <div class="kpi-info">
                 <div class="kpi-top-row">
-                  <span class="kpi-number" id="kpiClassesVal">6</span>
-                  <span class="kpi-badge up">▲ 0%</span>
+                  <span class="kpi-number" id="kpiClassesVal">—</span>
+                  <span class="kpi-badge hidden"></span>
                 </div>
-                <div class="kpi-title">Inovasi / Kelas</div>
-                <div class="kpi-subtext">kohort berdaftar</div>
+                <div class="kpi-title">Kelas</div>
+                <div class="kpi-subtext">kelas disertai</div>
               </div>
             </article>
 
@@ -291,11 +291,11 @@
               <div class="kpi-icon-box amber">📝</div>
               <div class="kpi-info">
                 <div class="kpi-top-row">
-                  <span class="kpi-number" id="kpiPbVal">8</span>
-                  <span class="kpi-badge up">▲ 33%</span>
+                  <span class="kpi-number" id="kpiPbVal">—</span>
+                  <span class="kpi-badge hidden"></span>
                 </div>
-                <div class="kpi-title">Penyelidikan / PB</div>
-                <div class="kpi-subtext">4 selesai</div>
+                <div class="kpi-title">Tugasan PB</div>
+                <div class="kpi-subtext">dalam semester dipilih</div>
               </div>
             </article>
 
@@ -303,11 +303,11 @@
               <div class="kpi-icon-box rose">📚</div>
               <div class="kpi-info">
                 <div class="kpi-top-row">
-                  <span class="kpi-number" id="kpiSessVal">24</span>
-                  <span class="kpi-badge up">▲ 0%</span>
+                  <span class="kpi-number" id="kpiSessVal">—</span>
+                  <span class="kpi-badge hidden"></span>
                 </div>
-                <div class="kpi-title">Penerbitan / Sesi</div>
-                <div class="kpi-subtext">jadual mingguan</div>
+                <div class="kpi-title">Sesi kuliah</div>
+                <div class="kpi-subtext">dalam semester dipilih</div>
               </div>
             </article>
 
@@ -315,10 +315,10 @@
               <div class="kpi-icon-box green">🏫</div>
               <div class="kpi-info">
                 <div class="kpi-top-row">
-                  <span class="kpi-number" id="kpiMembersVal">9</span>
+                  <span class="kpi-number" id="kpiMembersVal">—</span>
                 </div>
-                <div class="kpi-title">Sek. Pengajar / Ahli</div>
-                <div class="kpi-subtext">6 seksyen aktif</div>
+                <div class="kpi-title">Ahli kelas</div>
+                <div class="kpi-subtext">kelas semasa</div>
               </div>
             </article>
 
@@ -326,10 +326,10 @@
               <div class="kpi-icon-box orange">🤝</div>
               <div class="kpi-info">
                 <div class="kpi-top-row">
-                  <span class="kpi-number" id="kpiEventsVal">7</span>
+                  <span class="kpi-number" id="kpiEventsVal">—</span>
                 </div>
-                <div class="kpi-title">Hubungan Luar / Acara</div>
-                <div class="kpi-subtext">235 terlibat</div>
+                <div class="kpi-title">Tarikh penting</div>
+                <div class="kpi-subtext">dalam semester dipilih</div>
               </div>
             </article>
 
@@ -337,11 +337,11 @@
               <div class="kpi-icon-box purple">📄</div>
               <div class="kpi-info">
                 <div class="kpi-top-row">
-                  <span class="kpi-number" id="kpiResVal">8</span>
-                  <span class="kpi-badge up">▲ 200%</span>
+                  <span class="kpi-number" id="kpiResVal">—</span>
+                  <span class="kpi-badge hidden"></span>
                 </div>
-                <div class="kpi-title">Dasar / Dokumen</div>
-                <div class="kpi-subtext">bahan rujukan</div>
+                <div class="kpi-title">Nota &amp; sumber</div>
+                <div class="kpi-subtext">dalam semester dipilih</div>
               </div>
             </article>
           </div>
@@ -351,7 +351,7 @@
             <!-- Card 1: Trend Tahunan (Line Chart) -->
             <section class="dashboard-card" id="trendChartCard">
               <div class="card-header-bar">
-                <h3>Trend tahunan</h3>
+                <h3>Ringkasan semester</h3>
                 <div class="trend-legend">
                   <span class="legend-pill"><span class="legend-dot blue"></span> Inovasi</span>
                   <span class="legend-pill"><span class="legend-dot amber"></span> Penyelidikan</span>
@@ -366,13 +366,13 @@
             <!-- Card 2: Inovasi Mengikut Jabatan (Donut Chart) -->
             <section class="dashboard-card" id="donutChartCard">
               <div class="card-header-bar">
-                <h3>Inovasi mengikut jabatan</h3>
+                <h3>Kelas dan semester</h3>
               </div>
               <div class="donut-widget-body">
                 <div class="donut-svg-box" id="donutSvgBox">
                   <svg viewBox="0 0 140 140" id="donutSvg"></svg>
                   <div class="donut-center-label">
-                    <strong id="donutTotalNumber">6</strong>
+                    <strong id="donutTotalNumber">—</strong>
                     <small>Jumlah</small>
                   </div>
                 </div>
@@ -386,8 +386,8 @@
             <section class="dashboard-card" id="top5Card">
               <div class="card-header-bar">
                 <div>
-                  <h3>Top 5 jabatan</h3>
-                  <small>Inovasi + penyelidikan + penerbitan</small>
+                  <h3>Tarikh terdekat</h3>
+                  <small>Tugasan dan acara akan datang</small>
                 </div>
               </div>
               <div class="ranking-list" id="top5List">
@@ -401,7 +401,7 @@
             <!-- Card 4: Output Mengikut Jabatan (Stacked Horizontal Bars) -->
             <section class="dashboard-card" id="stackedBarCard">
               <div class="card-header-bar">
-                <h3>Output mengikut jabatan</h3>
+                <h3>Jadual terkini</h3>
               </div>
               <div class="stacked-bar-list" id="stackedBarList">
                 <!-- Stacked horizontal progress rows -->
@@ -417,8 +417,7 @@
             <section class="dashboard-card" id="achievementCard">
               <div class="card-header-bar">
                 <div class="subtab-pill-row">
-                  <button class="subtab-pill active" type="button">Pencapaian</button>
-                  <button class="subtab-pill" type="button">Peringkat</button>
+                  <span class="eyebrow">KEMAJUAN TUGASAN</span>
                 </div>
               </div>
               <div class="column-chart-body" id="achievementColumnBody">
@@ -430,10 +429,7 @@
             <section class="dashboard-card" id="resourcesCard">
               <div class="card-header-bar">
                 <div class="subtab-pill-row">
-                  <button class="subtab-pill active" type="button">Penerbitan</button>
-                  <button class="subtab-pill" type="button">Sek. Pengajar</button>
-                  <button class="subtab-pill" type="button">Hub. Luar</button>
-                  <button class="subtab-pill" type="button">Dasar</button>
+                  <span class="eyebrow">SUMBER PEMBELAJARAN</span>
                 </div>
               </div>
               <div class="column-chart-body" id="resourceColumnBody">
@@ -522,7 +518,7 @@
           <div class="panel">
             <div class="section-heading">
               <div><h2>Jadual Kuliah &amp; Sesi Pembelajaran</h2><p class="muted">Senarai sesi mengikut waktu dan lokasi.</p></div>
-              <button class="btn btn-sm btn-primary" type="button" onclick="$('#sessionFormWrap').toggleAttribute('open')">➕ Tambah sesi</button>
+              <button id="scheduleAddBtn" class="btn btn-sm btn-primary" type="button" onclick="$('#sessionFormWrap').toggleAttribute('open')">➕ Tambah sesi</button>
             </div>
             <div id="scheduleList"></div>
           </div>
@@ -549,7 +545,7 @@
               <div class="btn-row">
                 <select id="pbSubjectFilter"></select>
                 <select id="pbStatusFilter"><option value="all">Semua</option><option value="open">Belum siap</option><option value="done">Selesai</option></select>
-                <button class="btn btn-sm btn-primary" type="button" onclick="$('#assignmentFormWrap').toggleAttribute('open')">➕ Terbitkan PB</button>
+                <button id="assignmentAddBtn" class="btn btn-sm btn-primary" type="button" onclick="$('#assignmentFormWrap').toggleAttribute('open')">➕ Terbitkan PB</button>
               </div>
             </div>
             <div id="assignmentList"></div>
@@ -575,7 +571,7 @@
           <div class="panel">
             <div class="section-heading">
               <div><h2>Kalendar &amp; Tarikh Penting</h2><p class="muted">Jadual cuti, takwim akademik, dan tarikh penghantaran.</p></div>
-              <button class="btn btn-sm btn-primary" type="button" onclick="$('#eventFormWrap').toggleAttribute('open')">➕ Tambah acara</button>
+              <button id="eventAddBtn" class="btn btn-sm btn-primary" type="button" onclick="$('#eventFormWrap').toggleAttribute('open')">➕ Tambah acara</button>
             </div>
             <div id="calendarList"></div>
           </div>
