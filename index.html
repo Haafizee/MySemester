@@ -101,6 +101,10 @@
           <span class="nav-icon">📚</span>
           <span class="nav-label">Nota &amp; Sumber</span>
         </button>
+        <button class="sidebar-link hidden" data-nav="subjects" type="button">
+          <span class="nav-icon">🧩</span>
+          <span class="nav-label">Tetapan Subjek</span>
+        </button>
 
         <div class="nav-section-title">PENTADBIRAN &amp; ALAT</div>
         <button class="sidebar-link" data-nav="preview" type="button">
@@ -255,6 +259,10 @@
              PANEL 1: UTAMA (ANALYTICAL DASHBOARD MATCHING JPPI IMAGE)
              ============================================================= -->
         <section id="panel-overview" class="app-panel">
+          <div id="studentConfigNotice" class="panel hidden" role="status">
+            <strong>Data subjek belum tersedia untuk semester ini.</strong>
+            <p class="muted small">KO atau Pentadbir kelas perlu menetapkan pensyarah, PIC dan jadual aktif bagi subjek sebelum jadual, PB, nota dan sumber dipaparkan kepada pelajar.</p>
+          </div>
           <!-- KPI Summary 6-Card Row (Matching Image) -->
           <div class="kpi-dashboard-row" id="kpiDashboardRow">
             <article class="kpi-card" data-kpi="classes">
@@ -491,6 +499,23 @@
               </div>
             </div>
           </section>
+        </section>
+
+        <section id="panel-subjects" class="app-panel hidden">
+          <div class="panel">
+            <div class="section-heading">
+              <div><h2>Tetapan Subjek, PIC &amp; Pensyarah</h2><p class="muted">KO atau Pentadbir kelas menetapkan PIC dan pensyarah bagi setiap subjek. Pelajar hanya melihat subjek yang mempunyai kedua-dua penetapan serta jadual aktif.</p></div>
+              <label>Semester <select id="subjectConfigSemester"></select></label>
+            </div>
+            <form id="subjectLinkForm" class="role-lab-form">
+              <label>Tambah subjek sedia ada<select id="subjectLinkSubject" required></select></label>
+              <button class="btn btn-light" type="submit">Pautkan kepada semester</button>
+            </form>
+            <div class="table-wrap">
+              <table><thead><tr><th>Subjek</th><th>Pensyarah</th><th>PIC</th><th>Status dashboard pelajar</th><th></th></tr></thead><tbody id="subjectConfigRows"></tbody></table>
+            </div>
+            <p id="subjectConfigMessage" class="small form-message" aria-live="polite"></p>
+          </div>
         </section>
 
         <!-- =============================================================

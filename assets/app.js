@@ -55,6 +55,7 @@ function setNavigationAvailability(isLoggedIn,isSystemAdmin,hasClass) {
     ? (isSystemAdmin?['overview','classes','preview','users','data','guide']:
       ['overview','schedule','assignments','calendar','resources'])
     : ['overview','classes','schedule','assignments','calendar','resources','preview','users','data','guide'];
+  if(isLoggedIn&&!isSystemAdmin&&hasClass&&currentClass?.permissions?.includes('semester.manage')) allowed.push('subjects');
   document.querySelectorAll('[data-nav]').forEach(button=>{
     const key=button.dataset.nav;
     button.classList.toggle('hidden',!allowed.includes(key));
@@ -92,6 +93,7 @@ function navigateTo(key) {
   $('#sidebarBackdrop')?.classList.remove('active');
   if(key==='preview'&&isSystemAdminCurrent&&!roleMatrixData) loadRolePreviewConfig();
   if(key==='data'&&isSystemAdminCurrent&&!adminDataSchema) loadAdminDataTable();
+  if(key==='subjects'&&!isSystemAdminCurrent) renderSubjectAssignmentPanel();
 }
 document.querySelectorAll('[data-nav]').forEach(button=>button.addEventListener('click',()=>navigateTo(button.dataset.nav)));
 $('#sidebarToggleBtn')?.addEventListener('click',()=>{
@@ -226,6 +228,7 @@ function populateWorkspaceFilters() {
     $('#rolePill').textContent=selected.memberRole||'';
     $('#sessionBadgeYear').textContent=semesters.find(s=>s.semesterId===semesterSelect?.value)?.academicSession||'—';
   }
+  setNavigationAvailability(true,isSystemAdminCurrent,!!selected);
   show('#classArea',!!selected);
   show('#noClass',!selected);
 }
@@ -234,8 +237,10 @@ function subjectOptions(classInfo,semesterId) {
     if(semesterId&&s.semesterId!==semesterId) return false;
     if(currentClassRole()==='lecturer') {
       return s.lecturerUserId===currentUser?.id &&
-        (workspaceData?.schedules||[]).some(session=>session.semester_subject_id===s.semesterSubjectId&&session.status!=='cancelled');
+        [...(workspaceData?.schedules||[]),...(workspaceData?.scheduleSeries||[])].some(item=>
+          item.semester_subject_id===s.semesterSubjectId&&!['cancelled','archived'].includes(String(item.status||'').toLowerCase()));
     }
+    if(currentClassRole()==='pic') return s.picUserId===currentUser?.id;
     return true;
   });
 }
@@ -365,7 +370,7 @@ async function loadStudentWorkspace() {
   const classId=currentClass?.classId;
   const semesterId=$('#filterSemesterSelect')?.value;
   if(!classId||!semesterId) {
-    workspaceData={...(workspaceData||{}),schedules:[],assignments:[],progress:[],events:[],resources:[]};
+    workspaceData={...(workspaceData||{}),schedules:[],scheduleSeries:[],assignments:[],assignmentResources:[],progress:[],events:[],resources:[],members:[]};
     populateSubjectSelects();
     renderStudentWorkspace();
     return;
@@ -383,20 +388,62 @@ async function loadStudentWorkspace() {
     const resources=await Promise.all(subjectOptions(currentClass,semesterId).map(subject=>
       api('listResources',{classId,semesterSubjectId:subject.semesterSubjectId})
     ));
+    const members=currentClass?.permissions?.includes('semester.manage')
+      ?await api('listClassMembers',{classId}):{items:[]};
     workspaceData={
       ...workspaceData,
       assignments:assignments.items||[],
+      assignmentResources:assignments.assignmentResources||[],
       progress:assignments.progress||[],
       events:events.items||[],
-      resources:resources.flatMap(result=>result.items||[])
+      resources:resources.flatMap(result=>result.items||[]),
+      members:members.items||[]
     };
     populateSubjectSelects();
     renderStudentWorkspace();
   } catch(error) {
-    workspaceData={...(workspaceData||{}),schedules:[],assignments:[],progress:[],events:[],resources:[]};
+    workspaceData={...(workspaceData||{}),schedules:[],scheduleSeries:[],assignments:[],assignmentResources:[],progress:[],events:[],resources:[]};
     renderStudentWorkspace(error.message);
     showToast('Gagal memuatkan data kelas: '+error.message,'error');
   }
+}
+function renderSubjectAssignmentPanel() {
+  const semesterSelect=$('#subjectConfigSemester');
+  if(!semesterSelect) return;
+  const semesters=currentClass?.semesters||[];
+  const previous=semesterSelect.value;
+  semesterSelect.innerHTML=semesters.map(s=>`<option value="${escapeHtml(s.semesterId)}">${escapeHtml(s.semesterName)}</option>`).join('');
+  const defaultSemester=$('#filterSemesterSelect')?.value||semesters.find(s=>s.status==='active')?.semesterId||semesters[0]?.semesterId||'';
+  semesterSelect.value=semesters.some(s=>s.semesterId===previous)?previous:defaultSemester;
+  const links=(currentClass?.semesterSubjects||[]).filter(s=>s.semesterId===semesterSelect.value);
+  const linkedSubjectIds=new Set(links.map(link=>link.subjectId));
+  const available=(currentClass?.availableSubjects||[]).filter(subject=>!linkedSubjectIds.has(subject.subject_id));
+  const subjectLinkSelect=$('#subjectLinkSubject');
+  if(subjectLinkSelect) {
+    subjectLinkSelect.innerHTML=available.map(subject=>
+      `<option value="${escapeHtml(subject.subject_id)}">${escapeHtml([subject.subject_code,subject.subject_name].filter(Boolean).join(' · '))}</option>`
+    ).join('')||'<option value="">Tiada subjek tersedia untuk dipautkan</option>';
+    subjectLinkSelect.disabled=!available.length;
+    const form=$('#subjectLinkForm');
+    if(form) form.classList.toggle('hidden',!currentClass?.permissions?.includes('semester.manage'));
+  }
+  const members=workspaceData?.members||[];
+  const scheduledIds=new Set([...(workspaceData?.schedules||[]),...(workspaceData?.scheduleSeries||[])]
+    .filter(x=>!['cancelled','archived'].includes(String(x.status||'').toLowerCase()))
+    .map(x=>x.semester_subject_id));
+  const staffOptions=(role,selected)=>`<option value="">Belum ditetapkan</option>`+members
+    .filter(member=>String(member.role||'').toLowerCase()===role)
+    .map(member=>`<option value="${escapeHtml(member.userId)}" ${member.userId===selected?'selected':''}>${escapeHtml(member.name||member.userId)}</option>`).join('');
+  $('#subjectConfigRows').innerHTML=links.map(link=>{
+    const complete=!!link.lecturerUserId&&!!link.picUserId&&scheduledIds.has(link.semesterSubjectId);
+    return `<tr>
+      <td><strong>${escapeHtml(link.subjectCode||'')}</strong><small>${escapeHtml(link.subjectName||'')}</small></td>
+      <td><select data-subject-staff="lecturerUserId" data-semester-subject="${escapeHtml(link.semesterSubjectId)}" aria-label="Pensyarah ${escapeHtml(link.subjectCode)}">${staffOptions('lecturer',link.lecturerUserId)}</select></td>
+      <td><select data-subject-staff="picUserId" data-semester-subject="${escapeHtml(link.semesterSubjectId)}" aria-label="PIC ${escapeHtml(link.subjectCode)}">${staffOptions('pic',link.picUserId)}</select></td>
+      <td><span class="status ${complete?'active':'draft'}">${complete?'Sedia dipaparkan':'Belum lengkap'}</span>${!scheduledIds.has(link.semesterSubjectId)?'<small>Jadual belum ditetapkan</small>':''}</td>
+      <td><button type="button" class="btn btn-light btn-small" data-save-subject-staff="${escapeHtml(link.semesterSubjectId)}">Simpan</button></td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="5" class="muted">Tiada subjek dipautkan kepada semester ini. Tambahkan pemetaan subjek melalui pentadbiran data.</td></tr>';
 }
 function renderStudentWorkspace(errorMessage='') {
   const data=workspaceData||{};
@@ -443,6 +490,13 @@ function renderStudentWorkspace(errorMessage='') {
   $('#assignmentList').innerHTML=errorMessage?`<p class="form-message error">${escapeHtml(errorMessage)}</p>`:
     filteredAssignments.length?filteredAssignments.map(a=>{
       const progress=progressByAssignment[a.assignment_id]||{};
+      const attachmentHtml=(data.assignmentResources||[]).filter(link=>link.assignment_id===a.assignment_id).map(link=>{
+        const resource=(data.resources||[]).find(item=>item.resource_id===link.resource_id);
+        if(!resource) return '';
+        const url=resource.url||resource.storage_file_id||'';
+        const label=escapeHtml(resource.resource_name||'Bahan PB');
+        return /^https?:\/\//i.test(url)?`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`:`<span>${label}</span>`;
+      }).filter(Boolean).join(' · ');
       const progressEditor=rolePermission(role,'pb.progress.update')?`<form class="assignment-progress-form" data-assignment-id="${escapeHtml(a.assignment_id)}">
         <label>Status kemajuan <select name="progress_status">
           ${[['not_started','Belum bermula'],['in_progress','Sedang dibuat'],['nearly_done','Hampir siap'],['completed','Selesai']].map(([value,label])=>`<option value="${value}" ${progress.progress_status===value?'selected':''}>${label}</option>`).join('')}
@@ -454,7 +508,7 @@ function renderStudentWorkspace(errorMessage='') {
       return `<article class="role-lab-card assignment-card"><div class="role-lab-card-head"><div>
         <h3>${escapeHtml(a.title)}</h3><p class="muted small">${escapeHtml(subjects[a.semester_subject_id]?.subjectName||'')} · ${escapeHtml(a.assignment_type||'PB')} · ${escapeHtml(a.marks_percentage||0)}%</p>
         </div><span class="status ${progress.progress_status==='completed'?'active':'draft'}">${escapeHtml(progress.progress_status||a.status||'published')}</span></div>
-        <p>${escapeHtml(a.description||'')}</p><p class="muted small">Tarikh hantar: ${escapeHtml(a.due_at||'—')} · Kaedah: ${escapeHtml(a.submission_method||'—')}</p>${progressEditor}</article>`;
+        <p>${escapeHtml(a.description||'')}</p><p class="muted small">Tarikh hantar: ${escapeHtml(a.due_at||'—')} · Kaedah: ${escapeHtml(a.submission_method||'—')}</p>${attachmentHtml?`<p class="muted small"><strong>Bahan PB:</strong> ${attachmentHtml}</p>`:''}${progressEditor}</article>`;
     }).join(''):'<p class="muted">Tiada tugasan PB untuk semester ini.</p>';
   const sortedEvents=events.slice().sort((a,b)=>String(a.start_at||'').localeCompare(String(b.start_at||'')));
   $('#calendarList').innerHTML=errorMessage?`<p class="form-message error">${escapeHtml(errorMessage)}</p>`:
@@ -469,6 +523,9 @@ function renderStudentWorkspace(errorMessage='') {
       return `<article class="role-lab-list-row"><div><strong>${escapeHtml(resource.resource_name||'Nota pembelajaran')}</strong><small>${escapeHtml(resource.description||'')}</small></div>
         ${/^https?:\/\//i.test(link)?`<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Buka sumber</a>`:''}</article>`;
     }).join('')}</section>`).join(''):'<p class="muted">Tiada nota atau sumber dikongsi untuk semester ini.</p>';
+  const configuredSubjects=subjectOptions(currentClass,data.semesterId);
+  show('#studentConfigNotice',role==='student'&&!configuredSubjects.length);
+  renderSubjectAssignmentPanel();
   renderOverviewDashboard({...data,schedules,assignments,events,resources});
 }
 function renderOverviewDashboard(viewData) {
@@ -538,7 +595,50 @@ $('#filterClassSelect')?.addEventListener('change',()=>{
   populateWorkspaceFilters();
   loadStudentWorkspace();
 });
-$('#filterSemesterSelect')?.addEventListener('change',loadStudentWorkspace);
+$('#filterSemesterSelect')?.addEventListener('change',()=>{
+  if($('#subjectConfigSemester')) $('#subjectConfigSemester').value=$('#filterSemesterSelect').value;
+  loadStudentWorkspace();
+});
+$('#subjectConfigSemester')?.addEventListener('change',renderSubjectAssignmentPanel);
+$('#subjectLinkForm')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const semesterId=$('#subjectConfigSemester').value,subjectId=$('#subjectLinkSubject').value;
+  const message=$('#subjectConfigMessage');
+  try {
+    const result=await api('linkSemesterSubject',{classId:currentClass?.classId,semesterId,subjectId});
+    const refreshed=await api('bootstrap',{});
+    workspaceData={...(workspaceData||{}),classes:refreshed.classes||[]};
+    currentClass=(refreshed.classes||[]).find(item=>item.classId===currentClass?.classId)||null;
+    await loadStudentWorkspace();
+    if(message) message.textContent=result.message||'Subjek dipautkan.';
+  } catch(error) {
+    if(message) message.textContent='Gagal memautkan subjek: '+error.message;
+    showToast('Gagal memautkan subjek: '+error.message,'error');
+  }
+});
+$('#subjectConfigRows')?.addEventListener('click',async e=>{
+  const button=e.target.closest('[data-save-subject-staff]');
+  if(!button) return;
+  const semesterSubjectId=button.dataset.saveSubjectStaff;
+  const fields=Array.from(document.querySelectorAll(`[data-semester-subject="${CSS.escape(semesterSubjectId)}"]`));
+  const lecturerUserId=fields.find(field=>field.dataset.subjectStaff==='lecturerUserId')?.value||'';
+  const picUserId=fields.find(field=>field.dataset.subjectStaff==='picUserId')?.value||'';
+  const message=$('#subjectConfigMessage');
+  button.disabled=true;
+  if(message) message.textContent='Menyimpan penetapan...';
+  try {
+    const result=await api('assignSemesterSubjectStaff',{semesterSubjectId,lecturerUserId,picUserId});
+    const refreshed=await api('bootstrap',{});
+    workspaceData={...(workspaceData||{}),classes:refreshed.classes||[]};
+    currentClass=(refreshed.classes||[]).find(item=>item.classId===currentClass?.classId)||null;
+    await loadStudentWorkspace();
+    if(message) message.textContent=result.message||'Penetapan disimpan.';
+    showToast(result.message||'Penetapan disimpan.');
+  } catch(error) {
+    if(message) message.textContent='Gagal menyimpan: '+error.message;
+    showToast('Gagal menyimpan penetapan: '+error.message,'error');
+  } finally { button.disabled=false; }
+});
 $('#pbSubjectFilter')?.addEventListener('change',()=>renderStudentWorkspace());
 $('#pbStatusFilter')?.addEventListener('change',()=>renderStudentWorkspace());
 ['#filterYearSelect','#filterCategorySelect','#filterStatusSelect'].forEach(selector=>{
@@ -1205,10 +1305,25 @@ function renderRoleLabWorkspace() {
   const listPage=listRecords[activeRoleLabTab];
   let content='';
   const header=`<div class="role-lab-toolbar"><label>Semester aktif <select id="roleLabSemester">${semesters.map(x=>`<option value="${escapeHtml(x.semester_id)}" ${x.semester_id===activeTestSemesterId?'selected':''}>${escapeHtml(x.semester_name)}</option>`).join('')}</select></label>${activeRoleLabTab==='schedule'?'':listPage?.controls||''}</div>`;
-  const subjectTable=listRecords.dashboard.items.map(x=>{const sub=subjectsById[x.subject_id]||{};return `<tr><td>${escapeHtml(sub.subject_code||'—')}</td><td>${escapeHtml(sub.subject_name||'Subjek')}</td><td>${escapeHtml(x.lecturer_user_id||'—')}</td><td>${assignments.filter(a=>a.semester_subject_id===x.semester_subject_id).length}</td></tr>`;}).join('')||`<tr><td colspan="4">${escapeHtml(listRecords.dashboard.empty)}</td></tr>`;
+  const assignStaff=roleLabAllowed('semester.manage');
+  const staffOptions=(staffRole,selectedId)=>`<option value="">Belum ditetapkan</option>`+(members||[])
+    .filter(member=>String(member.role||'').toLowerCase()===staffRole)
+    .map(member=>`<option value="${escapeHtml(member.userId)}" ${member.userId===selectedId?'selected':''}>${escapeHtml(member.name||member.userId)}</option>`).join('');
+  const subjectTable=listRecords.dashboard.items.map(x=>{
+    const sub=subjectsById[x.subject_id]||{};
+    const scheduleReady=sessions.some(item=>item.semester_subject_id===x.semester_subject_id)||
+      (ctx.scheduleSeries||[]).some(item=>item.semester_subject_id===x.semester_subject_id&&item.status!=='cancelled');
+    const ready=!!x.lecturer_user_id&&!!x.pic_user_id&&scheduleReady;
+    return `<tr><td>${escapeHtml(sub.subject_code||'—')}</td><td>${escapeHtml(sub.subject_name||'Subjek')}</td>
+      <td>${assignStaff?`<select data-subject-staff="lecturerUserId" data-semester-subject="${escapeHtml(x.semester_subject_id)}" aria-label="Pensyarah">${staffOptions('lecturer',x.lecturer_user_id)}</select>`:escapeHtml(x.lecturer_user_id||'—')}</td>
+      <td>${assignStaff?`<select data-subject-staff="picUserId" data-semester-subject="${escapeHtml(x.semester_subject_id)}" aria-label="PIC">${staffOptions('pic',x.pic_user_id)}</select>`:escapeHtml(x.pic_user_id||'—')}</td>
+      <td>${assignments.filter(a=>a.semester_subject_id===x.semester_subject_id).length}</td>
+      <td><span class="status ${ready?'active':'draft'}">${ready?'Sedia':'Belum lengkap'}</span></td>
+      ${assignStaff?`<td><button class="btn btn-light btn-small" data-role-action="save-subject-staff" data-id="${escapeHtml(x.semester_subject_id)}">Simpan</button></td>`:''}</tr>`;
+  }).join('')||`<tr><td colspan="${assignStaff?7:6}">${escapeHtml(listRecords.dashboard.empty)}</td></tr>`;
   if(activeRoleLabTab==='dashboard') {
     content=`${header}<div class="role-lab-grid">
-      <section class="role-lab-card role-lab-wide"><div class="role-lab-card-head"><h3>Subjek semester</h3><span class="muted small">${ss.length} subjek</span></div><div class="table-wrap role-lab-table-wrap"><table><thead><tr><th>Kod</th><th>Subjek</th><th>Pensyarah</th><th>PB</th></tr></thead><tbody>${subjectTable}</tbody></table></div>${listRecords.dashboard.pagination}</section>
+      <section class="role-lab-card role-lab-wide"><div class="role-lab-card-head"><h3>Subjek semester</h3><span class="muted small">${ss.length} subjek</span></div>${assignStaff?`<p class="muted small">Tetapkan staf dan jadual bagi setiap subjek. PB, nota dan sumber pelajar hanya dipaparkan apabila pemetaan lengkap.</p><form id="roleLabSubjectLinkForm" class="role-lab-form"><label>Tambah subjek sedia ada<select name="subjectId" required>${(ctx.availableSubjects||[]).filter(subject=>!ss.some(link=>link.subject_id===subject.subject_id)).map(subject=>`<option value="${escapeHtml(subject.subject_id)}">${escapeHtml([subject.subject_code,subject.subject_name].filter(Boolean).join(' · '))}</option>`).join('')||'<option value="">Tiada subjek tersedia untuk dipautkan</option>'}</select></label><button class="btn btn-light" type="submit" ${(ctx.availableSubjects||[]).every(subject=>ss.some(link=>link.subject_id===subject.subject_id))?'disabled':''}>Pautkan kepada semester</button></form>`:''}<div class="table-wrap role-lab-table-wrap"><table><thead><tr><th>Kod</th><th>Subjek</th><th>Pensyarah</th><th>PIC</th><th>PB</th><th>Status pelajar</th>${assignStaff?'<th></th>':''}</tr></thead><tbody>${subjectTable}</tbody></table></div>${listRecords.dashboard.pagination}</section>
       <section class="role-lab-card"><h3>Tarikh penting seterusnya</h3>${upcoming.map(x=>`<div class="role-lab-list-row"><div><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.type)}</small></div><time>${escapeHtml(x.date)}</time></div>`).join('')||'<p class="muted small">Tiada tarikh akan datang direkodkan.</p>'}</section>
       <section class="role-lab-card"><h3>Status ruang kerja</h3><div class="role-lab-summary"><span>Peranan aktif</span><b>${escapeHtml(roleLabRoleLabel(role))}</b></div><div class="role-lab-summary"><span>PB aktif</span><b>${assignments.length}</b></div><div class="role-lab-summary"><span>Ahli kelas</span><b>${members.length}</b></div><p class="muted small">Data kelas dipaparkan bersama perubahan sandbox sesi ini.</p></section>
       ${roleLabAllowed('semester.manage')?`<section class="role-lab-card"><h3>Tambah semester</h3><form id="roleLabSemesterForm" class="role-lab-form"><label>Nama semester<input name="semesterName" required placeholder="Contoh: Semester 2"></label><label>Sesi akademik<input name="academicSession" placeholder="2026/2027"></label><label>Nombor semester<input name="semesterNumber" type="number" min="1" max="15" value="${semesters.length+1}"></label><label>Tarikh mula<input name="startDate" type="date"></label><label>Tarikh tamat<input name="endDate" type="date"></label><div class="btn-row"><button class="btn" type="submit">Cipta semester</button><span class="small form-message" id="roleLabSemesterMessage"></span></div></form></section>`:''}
@@ -1220,8 +1335,14 @@ function renderRoleLabWorkspace() {
   } else if(activeRoleLabTab==='assignments') {
     content=`${header}<section class="role-lab-card"><div class="role-lab-card-head"><div><h3>Penilaian Berterusan</h3><p class="muted small">Setiap PB terikat kepada subjek dalam semester aktif.</p></div>${roleLabAllowed('pb.create')?'<button class="btn btn-small" data-role-action="new-pb">Tambah PB</button>':''}</div><div class="role-lab-records">${listPage.items.map(a=>{
       const progress=ownProgress.find(x=>x.assignment_id===a.assignment_id);
+      const attachmentHtml=(ctx.assignmentResources||[]).filter(link=>link.assignment_id===a.assignment_id).map(link=>{
+        const resource=resources.find(item=>item.resource_id===link.resource_id);
+        if(!resource) return '';
+        const url=resource.url||resource.storage_file_id||'',label=escapeHtml(resource.resource_name||'Bahan PB');
+        return /^https?:\/\//i.test(url)?`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`:`<span>${label}</span>`;
+      }).filter(Boolean).join(' · ');
       const actions=role==='student'?`<button class="btn btn-light btn-small" data-role-action="progress-pb" data-id="${escapeHtml(a.assignment_id)}">Kemaskini kemajuan</button>`:`${roleLabAllowed('pb.edit')?`<button class="btn btn-light btn-small" data-role-action="edit-pb" data-id="${escapeHtml(a.assignment_id)}">Edit</button>`:''}${roleLabAllowed('pb.marks.manage')?`<button class="btn btn-light btn-small" data-role-action="mark-pb" data-id="${escapeHtml(a.assignment_id)}">Rekod markah</button>`:''}${roleLabAllowed('pb.delete')?`<button class="btn btn-danger-light btn-small" data-role-action="delete-pb" data-id="${escapeHtml(a.assignment_id)}">Arkib</button>`:''}`;
-      return `<article class="role-lab-record"><div class="role-lab-record-main"><b>${escapeHtml(a.title||'Tugasan PB')}</b><span>${escapeHtml(roleLabSubjectName(a.semester_subject_id))} · ${escapeHtml(a.assignment_type||'PB')} · ${escapeHtml(a.marks_percentage||0)}%</span><small>Mula: ${escapeHtml(a.start_date||'—')} · Hantar: ${escapeHtml(a.due_at||'—')}</small>${role==='student'?`<div class="role-progress"><span>Kemajuan: ${Number(progress?.progress_percentage||0)}%</span><div><i style="width:${Math.max(0,Math.min(100,Number(progress?.progress_percentage||0)))}%"></i></div></div>`:''}</div><div class="role-lab-record-actions">${actions}</div></article>`;
+      return `<article class="role-lab-record"><div class="role-lab-record-main"><b>${escapeHtml(a.title||'Tugasan PB')}</b><span>${escapeHtml(roleLabSubjectName(a.semester_subject_id))} · ${escapeHtml(a.assignment_type||'PB')} · ${escapeHtml(a.marks_percentage||0)}%</span><small>Mula: ${escapeHtml(a.start_date||'—')} · Hantar: ${escapeHtml(a.due_at||'—')}</small>${attachmentHtml?`<small>Bahan PB: ${attachmentHtml}</small>`:''}${role==='student'?`<div class="role-progress"><span>Kemajuan: ${Number(progress?.progress_percentage||0)}%</span><div><i style="width:${Math.max(0,Math.min(100,Number(progress?.progress_percentage||0)))}%"></i></div></div>`:''}</div><div class="role-lab-record-actions">${actions}</div></article>`;
     }).join('')||`<p class="muted">${escapeHtml(listPage.empty)}</p>`}</div>${listPage.pagination}</section><div id="roleLabEditor"></div>`;
   } else if(activeRoleLabTab==='resources') {
     const groupedResources=listPage.items.reduce((groups,resource)=>{
@@ -1557,6 +1678,17 @@ $('#roleLabContent')?.addEventListener('click',async e=>{
   }
   const btn=e.target.closest('[data-role-action]'); if(!btn) return;
   const action=btn.dataset.roleAction,id=btn.dataset.id;
+  if(action==='save-subject-staff') {
+    const fields=Array.from(document.querySelectorAll(`[data-semester-subject="${CSS.escape(id)}"]`));
+    const lecturerUserId=fields.find(field=>field.dataset.subjectStaff==='lecturerUserId')?.value||'';
+    const picUserId=fields.find(field=>field.dataset.subjectStaff==='picUserId')?.value||'';
+    try {
+      await workspaceApi('assignSemesterSubjectStaff',{semesterSubjectId:id,lecturerUserId,picUserId});
+      await loadRoleTestContext();
+      showToast('Penetapan pensyarah dan PIC disimpan.');
+    } catch(error) { showToast('Gagal menyimpan penetapan: '+error.message,'error'); }
+    return;
+  }
   if(action==='close-editor') { $('#roleLabEditor').innerHTML='';roleLabEditing=null;return; }
   if(['new-schedule','edit-schedule','new-pb','edit-pb','progress-pb','mark-pb','new-resource','edit-resource','new-event','edit-event'].includes(action)) {
     roleLabOpenEditor(action,id); return;
@@ -1626,6 +1758,21 @@ $('#scheduleList')?.addEventListener('change',e=>{
   scheduleCalendarSubject=e.target.value;renderStudentWorkspace();
 });
 $('#roleLabContent')?.addEventListener('submit',async e=>{
+  if(e.target.id==='roleLabSubjectLinkForm') {
+    e.preventDefault();
+    const subjectId=new FormData(e.target).get('subjectId');
+    const message=e.target.querySelector('button');
+    if(message) message.disabled=true;
+    try {
+      await workspaceApi('linkSemesterSubject',{classId:activeRoleTest.classId,semesterId:activeTestSemesterId,subjectId});
+      await loadRoleTestContext();
+      showToast('Subjek dipautkan kepada semester ujian.');
+    } catch(error) {
+      if(message) message.disabled=false;
+      showToast('Gagal memautkan subjek: '+error.message,'error');
+    }
+    return;
+  }
   if(e.target.id==='roleLabSemesterForm') {
     e.preventDefault();const v=Object.fromEntries(new FormData(e.target).entries());
     try { await workspaceApi('createSemester',{classId:activeRoleTest.classId,semesterName:v.semesterName,academicSession:v.academicSession,semesterNumber:Number(v.semesterNumber),startDate:v.startDate,endDate:v.endDate});

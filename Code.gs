@@ -20,7 +20,7 @@ const APP = {
     ClassInvitations:['invitation_id','class_id','invite_code','expires_at','max_uses','uses_count','status','created_by','created_at'],
     Semesters:['semester_id','class_id','semester_name','academic_session','semester_number','start_date','end_date','status','created_at'],
     Subjects:['subject_id','subject_code','subject_name','credit_hour','description','created_at'],
-    SemesterSubjects:['semester_subject_id','semester_id','subject_id','lecturer_user_id','subject_color','status'],
+    SemesterSubjects:['semester_subject_id','semester_id','subject_id','lecturer_user_id','subject_color','status','pic_user_id'],
     ScheduleSeries:['series_id','semester_subject_id','day_of_week','start_time','end_time','room','delivery_mode','recurrence_start','recurrence_end','status','created_by'],
     ClassSessions:['session_id','semester_subject_id','series_id','session_date','start_time','end_time','room','lecturer_user_id','delivery_mode','session_type','status','version','verification_status','updated_by','updated_at'],
     ScheduleChangeRequests:['request_id','session_id','requested_by','request_type','proposed_data_json','reason','approval_status','reviewed_by','reviewed_at','created_at'],
@@ -96,6 +96,8 @@ const ACTION_PERMISSION = {
   listCalendarEvents:'calendar.view',
   createCalendarEvent:'calendar.create',
   createSemester:'semester.manage',
+  linkSemesterSubject:'semester.manage',
+  assignSemesterSubjectStaff:'semester.manage',
   activateClass:'class.activate',
   updateAssignment:'pb.edit',
   deleteAssignment:'pb.delete',
@@ -294,6 +296,8 @@ function dispatchAction_(u, action, d) {
     case 'createClass': return createClass_(u,d);
     case 'activateClass': return activateClass_(u,d);
     case 'createSemester': return createSemester_(u,d);
+    case 'linkSemesterSubject': return linkSemesterSubject_(u,d);
+    case 'assignSemesterSubjectStaff': return assignSemesterSubjectStaff_(u,d);
     case 'listSchedules': return listSchedules_(u,d);
     case 'createScheduleSession': return createScheduleSession_(u,d);
     case 'updateSchedule': return updateSchedule_(u,d);
@@ -478,7 +482,7 @@ function requireSystemAdmin_(u) {
 
 function ensureExtendedSheets_() {
   const cache = CacheService.getScriptCache();
-  if (cache.get('EXTENDED_SHEETS_READY_V2') === '1') return;
+  if (cache.get('EXTENDED_SHEETS_READY_V3') === '1') return;
 
   const spreadsheet=ss_();
   ['PermissionMatrix','RoleTestSessions','RoleTestAccounts','RoleTestData','RoleTestAudit'].forEach(name=>{
@@ -494,19 +498,19 @@ function ensureExtendedSheets_() {
       sh.setFrozenRows(1);
     }
   });
-  const sessionSheet=spreadsheet.getSheetByName('RoleTestSessions');
-  const sessionHeaders=sessionSheet.getRange(1,1,1,sessionSheet.getLastColumn()).getValues()[0].map(String);
-  APP.SHEETS.RoleTestSessions.forEach(header=>{
-    if(sessionHeaders.indexOf(header)<0) {
-      const column=sessionSheet.getLastColumn()+1;
-      sessionSheet.getRange(1,column).setValue(header);
-      if(header==='sandbox_enabled' && sessionSheet.getLastRow()>1) {
-        sessionSheet.getRange(2,column,sessionSheet.getLastRow()-1,1).setValue(true);
+  [['RoleTestSessions','sandbox_enabled'],['SemesterSubjects','pic_user_id']].forEach(([name,header])=>{
+    const sheet=spreadsheet.getSheetByName(name);
+    const headers=sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(String);
+    if(headers.indexOf(header)<0) {
+      const column=sheet.getLastColumn()+1;
+      sheet.getRange(1,column).setValue(header);
+      if(name==='RoleTestSessions' && sheet.getLastRow()>1) {
+        sheet.getRange(2,column,sheet.getLastRow()-1,1).setValue(true);
       }
     }
+    invalidateRowsCache_(name);
   });
-  invalidateRowsCache_('RoleTestSessions');
-  try { cache.put('EXTENDED_SHEETS_READY_V2', '1', 21600); } catch(e){}
+  try { cache.put('EXTENDED_SHEETS_READY_V3', '1', 21600); } catch(e){}
 }
 
 function ensureRolePermissionMatrix_() {
@@ -646,6 +650,13 @@ function enforceActionPermission_(u, action, d) {
     const ss=findBy_('SemesterSubjects','semester_subject_id',d.semesterSubjectId);
     const sem=ss && findBy_('Semesters','semester_id',ss.semester_id);
     classId=sem ? sem.class_id : '';
+  } else if (action==='linkSemesterSubject') {
+    const sem=findBy_('Semesters','semester_id',d.semesterId);
+    classId=sem ? sem.class_id : classId;
+  } else if (action==='assignSemesterSubjectStaff') {
+    const ss=findBy_('SemesterSubjects','semester_subject_id',d.semesterSubjectId);
+    const sem=ss && findBy_('Semesters','semester_id',ss.semester_id);
+    classId=sem ? sem.class_id : '';
   } else if (action==='createCalendarEvent' || action==='createSemester') {
     const sem=action==='createCalendarEvent' ? findBy_('Semesters','semester_id',d.semesterId) : null;
     classId=sem ? sem.class_id : classId;
@@ -681,9 +692,19 @@ function enforceActionPermission_(u, action, d) {
     if (role==='admin') role='class_admin';
   }
   if (!roleHasPermission_(role,permissionId)) throw new Error('Permission denied by active role matrix: '+permissionId+' ('+role+'). Check this permission and its parent permissions.');
-  if(role==='lecturer') {
+  if(role==='lecturer'||role==='pic') {
     const semesterSubjectId=lecturerActionSubjectId_(action,d);
-    if(semesterSubjectId) requireLecturerScheduleSubject_(user.userId,semesterSubjectId);
+    if(['createScheduleSession','updateSchedule','verifySchedule','deleteSchedule','createAssignment','updateAssignment',
+      'deleteAssignment','recordAssignmentMark','createResourceLink','updateResource','deleteResource',
+      'createCalendarEvent','updateCalendarEvent','deleteCalendarEvent'].includes(action)) {
+      if(!semesterSubjectId) throw new Error('Tindakan ini mesti dikaitkan dengan subjek yang ditugaskan.');
+      requireAssignedRoleSubject_(role,user.userId,semesterSubjectId);
+    }
+  } else if(role==='student' && action==='updateProgress') {
+    const assignment=findBy_('Assignments','assignment_id',d.assignmentId);
+    if(assignment && !studentVisibleSemesterSubjectIds_(assignment.semester_subject_id).includes(assignment.semester_subject_id)) {
+      throw new Error('Subjek ini belum dikonfigurasi untuk dipaparkan kepada pelajar.');
+    }
   }
 }
 
@@ -699,28 +720,79 @@ function lecturerActionSubjectId_(action,d) {
     return findBy_('Resources','resource_id',d.resourceId)?.semester_subject_id||'';
   }
   if(action==='createCalendarEvent') return d.semesterSubjectId||'';
-  if(action==='updateCalendarEvent') return findBy_('CalendarEvents','event_id',d.eventId)?.semester_subject_id||'';
+  if(action==='updateCalendarEvent'||action==='deleteCalendarEvent') return findBy_('CalendarEvents','event_id',d.eventId)?.semester_subject_id||'';
   return '';
 }
 
 function lecturerScheduleSubjectIds_(userId) {
-  const semesters=getRows_('Semesters');
-  const semesterById=Object.fromEntries(semesters.map(x=>[x.semester_id,x]));
-  const subjects=getRows_('SemesterSubjects').filter(x=>{
-    const semester=semesterById[x.semester_id];
-    if(!semester||!x.semester_subject_id) return false;
-    if(TEST_CONTEXT_ && TEST_CONTEXT_.role==='lecturer') return semester.class_id===TEST_CONTEXT_.classId;
-    return x.lecturer_user_id===userId && getRows_('ClassMembers').some(m=>
-      m.user_id===userId&&m.class_id===semester.class_id&&m.membership_status==='active'&&String(m.member_role).toLowerCase()==='lecturer');
-  });
-  const scheduledIds=new Set(getRows_('ClassSessions').filter(x=>x.status!=='cancelled').map(x=>x.semester_subject_id));
-  getRows_('ScheduleSeries').filter(x=>x.status!=='cancelled').forEach(x=>scheduledIds.add(x.semester_subject_id));
-  return subjects.filter(x=>scheduledIds.has(x.semester_subject_id)).map(x=>x.semester_subject_id);
+  return assignedSemesterSubjectIds_('lecturer',userId);
 }
 
 function requireLecturerScheduleSubject_(userId,semesterSubjectId) {
   if(!lecturerScheduleSubjectIds_(userId).includes(semesterSubjectId)) {
     throw new Error('Pensyarah hanya boleh mengurus subjek yang ditugaskan kepadanya dan mempunyai jadual aktif.');
+  }
+}
+
+function activeClassMemberHasRole_(userId,classId,role) {
+  const user=findBy_('Users','user_id',userId);
+  return !!user&&user.account_status==='active'&&getRows_('ClassMembers').some(member=>
+    member.user_id===userId&&member.class_id===classId&&member.membership_status==='active'&&
+    String(member.member_role||'').toLowerCase()===role);
+}
+
+function assignmentResourceLinks_(assignments) {
+  const assignmentById=Object.fromEntries(assignments.map(item=>[item.assignment_id,item]));
+  const resourceById=Object.fromEntries(getRows_('Resources').map(item=>[item.resource_id,item]));
+  return getRows_('AssignmentResources').filter(link=>{
+    const assignment=assignmentById[link.assignment_id],resource=resourceById[link.resource_id];
+    return !!assignment&&!!resource&&assignment.semester_subject_id===resource.semester_subject_id&&
+      resource.visibility!=='personal'&&resource.visibility!=='archived';
+  });
+}
+
+function semesterSubjectHasSchedule_(semesterSubjectId) {
+  return getRows_('ClassSessions').some(row=>row.semester_subject_id===semesterSubjectId&&
+    !['cancelled','archived'].includes(String(row.status||'').toLowerCase())) ||
+    getRows_('ScheduleSeries').some(row=>row.semester_subject_id===semesterSubjectId&&
+      !['cancelled','archived'].includes(String(row.status||'').toLowerCase()));
+}
+
+function studentVisibleSemesterSubjectIds_(semesterSubjectId) {
+  const links=getRows_('SemesterSubjects').filter(row=>!semesterSubjectId||row.semester_subject_id===semesterSubjectId);
+  return links.filter(link=>{
+    if(String(link.status||'active').toLowerCase()!=='active'||!link.lecturer_user_id||!link.pic_user_id) return false;
+    const semester=findBy_('Semesters','semester_id',link.semester_id);
+    return !!semester &&
+      activeClassMemberHasRole_(link.lecturer_user_id,semester.class_id,'lecturer') &&
+      activeClassMemberHasRole_(link.pic_user_id,semester.class_id,'pic') &&
+      semesterSubjectHasSchedule_(link.semester_subject_id);
+  }).map(link=>link.semester_subject_id);
+}
+
+function assignedSemesterSubjectIds_(role,userId) {
+  const field=role==='lecturer'?'lecturer_user_id':'pic_user_id';
+  const semesters=getRows_('Semesters');
+  const testSession=TEST_CONTEXT_&&TEST_CONTEXT_.role===role;
+  const links=getRows_('SemesterSubjects').filter(link=>{
+    const semester=semesters.find(item=>item.semester_id===link.semester_id);
+    if(!semester||!link.semester_subject_id||String(link.status||'active').toLowerCase()!=='active') return false;
+    if(testSession) {
+      if(semester.class_id!==TEST_CONTEXT_.classId||!link[field]) return false;
+      return activeClassMemberHasRole_(link[field],semester.class_id,role);
+    }
+    return link[field]===userId&&activeClassMemberHasRole_(userId,semester.class_id,role);
+  });
+  return links.filter(link=>role!=='lecturer'||semesterSubjectHasSchedule_(link.semester_subject_id))
+    .map(link=>link.semester_subject_id);
+}
+
+function requireAssignedRoleSubject_(role,userId,semesterSubjectId) {
+  const ids=role==='lecturer'?lecturerScheduleSubjectIds_(userId):assignedSemesterSubjectIds_(role,userId);
+  if(!ids.includes(semesterSubjectId)) {
+    throw new Error(role==='lecturer'
+      ?'Pensyarah hanya boleh mengurus subjek yang ditugaskan kepadanya dan mempunyai jadual aktif.'
+      :'PIC hanya boleh mengurus subjek yang ditugaskan kepadanya.');
   }
 }
 
@@ -990,9 +1062,12 @@ function roleTestContext_(u,d) {
   const semesters=allSemesters.filter(x=>x.class_id===classId);
   const semesterIds=semesters.map(x=>x.semester_id);
   const semesterSubjects=getRows_('SemesterSubjects').filter(x=>semesterIds.includes(x.semester_id));
-  const lecturerSubjectIds=TEST_CONTEXT_.role==='lecturer'?lecturerScheduleSubjectIds_(TEST_CONTEXT_.testUserId):null;
-  const visibleSemesterSubjects=lecturerSubjectIds
-    ?semesterSubjects.filter(x=>lecturerSubjectIds.includes(x.semester_subject_id))
+  const role=TEST_CONTEXT_.role;
+  const allowedIds=role==='student'?studentVisibleSemesterSubjectIds_(''):
+    role==='lecturer'?lecturerScheduleSubjectIds_(TEST_CONTEXT_.testUserId):
+    role==='pic'?assignedSemesterSubjectIds_('pic',TEST_CONTEXT_.testUserId):null;
+  const visibleSemesterSubjects=allowedIds
+    ?semesterSubjects.filter(x=>allowedIds.includes(x.semester_subject_id))
     :semesterSubjects;
   const subjectIds=visibleSemesterSubjects.map(x=>x.subject_id);
   const subjects=getRows_('Subjects').filter(x=>subjectIds.includes(x.subject_id));
@@ -1005,6 +1080,8 @@ function roleTestContext_(u,d) {
   const can=pid=>roleHasPermission_(TEST_CONTEXT_.role,pid);
   const members=can('members.view')?listClassMembers_({userId:TEST_CONTEXT_.testUserId},{classId:classId}).items:[];
   const progress=can('pb.view')?getRows_('StudentAssignmentProgress').filter(x=>x.user_id===TEST_CONTEXT_.testUserId && allAssignments.some(a=>a.assignment_id===x.assignment_id && ssIds.includes(a.semester_subject_id))):[];
+  const visibleAssignmentIds=allAssignments.filter(x=>ssIds.includes(x.semester_subject_id)&&
+    x.status!=='cancelled'&&(role!=='student'||x.status==='published')).map(x=>x.assignment_id);
   return {ok:true,classId:classId,role:TEST_CONTEXT_.role,sessionId:sessionId,
     permissions:{
       classView:can('class.view'),semesterView:can('semester.view'),
@@ -1015,13 +1092,17 @@ function roleTestContext_(u,d) {
     semesters:can('semester.view')?semesters:[],
     semesterSubjects:can('semester.view')?visibleSemesterSubjects:[],
     subjects:can('semester.view')?subjects:[],
+    availableSubjects:can('semester.manage')?getRows_('Subjects'):[],
     sessions:can('schedule.view')?classSessions.filter(x=>ssIds.includes(x.semester_subject_id)):[],
     scheduleSeries:can('schedule.view')?scheduleSeries.filter(x=>ssIds.includes(x.semester_subject_id)):[],
-    assignments:can('pb.view')?allAssignments.filter(x=>ssIds.includes(x.semester_subject_id)):[],
+    assignments:can('pb.view')?allAssignments.filter(x=>ssIds.includes(x.semester_subject_id)&&
+      x.status!=='cancelled'&&(role!=='student'||x.status==='published')):[],
+    assignmentResources:can('pb.view')?assignmentResourceLinks_(allAssignments.filter(x=>visibleAssignmentIds.includes(x.assignment_id))):[],
     resources:can('resources.view')?allResources.filter(x=>ssIds.includes(x.semester_subject_id) && x.visibility!=='personal' && x.visibility!=='archived'):[],
     calendarEvents:can('calendar.view')?allEvents.filter(x=>semesterIds.includes(x.semester_id) &&
       x.visibility!=='personal' && x.visibility!=='archived' &&
-      (!x.semester_subject_id||ssIds.includes(x.semester_subject_id))):[],
+      (role==='lecturer'||role==='pic'?!!x.semester_subject_id&&ssIds.includes(x.semester_subject_id):
+        !x.semester_subject_id?role!=='student'||ssIds.length>0:ssIds.includes(x.semester_subject_id))):[],
     members:members,ownProgress:progress,
     auditLogs:getRows_('RoleTestAudit').filter(x=>x.session_id===sessionId).slice(-50).reverse(),
     sandboxEnabled:TEST_CONTEXT_.sandboxEnabled,
@@ -1227,7 +1308,14 @@ function bootstrap_(u) {
     if (!c || !roleHasPermission_(role,'class.view')) return null;
     const semesters = allSemesters.filter(s => s.class_id === c.class_id);
     const semesterIds = semesters.map(s => s.semester_id);
-    const semesterSubjects = allSemesterSubjects.filter(ss => semesterIds.includes(ss.semester_id));
+    let semesterSubjects = allSemesterSubjects.filter(ss => semesterIds.includes(ss.semester_id));
+    if(role==='student') {
+      const visibleIds=new Set(studentVisibleSemesterSubjectIds_(''));
+      semesterSubjects=semesterSubjects.filter(ss=>visibleIds.has(ss.semester_subject_id));
+    } else if(role==='lecturer'||role==='pic') {
+      const visibleIds=new Set(assignedSemesterSubjectIds_(role,u.userId));
+      semesterSubjects=semesterSubjects.filter(ss=>visibleIds.has(ss.semester_subject_id));
+    }
     return {
       classId:c.class_id,className:c.class_name,classCode:c.class_code,
       memberRole:m.member_role,status:c.status,
@@ -1236,13 +1324,14 @@ function bootstrap_(u) {
         academicSession:s.academic_session,semesterNumber:s.semester_number,status:s.status
       })),
       permissions:ROLE_PERMISSION_DEFS.filter(permission=>roleHasPermission_(role,permission.id)).map(permission=>permission.id),
+      availableSubjects:roleHasPermission_(role,'semester.manage')?allSubjects:[],
       semesterSubjects:roleHasPermission_(role,'semester.view') ? semesterSubjects.map(ss=>{
         const subject=allSubjects.find(x=>x.subject_id===ss.subject_id)||{};
         return {
           semesterSubjectId:ss.semester_subject_id,semesterId:ss.semester_id,
           subjectId:ss.subject_id,subjectCode:subject.subject_code||'',
           subjectName:subject.subject_name||'',lecturerUserId:ss.lecturer_user_id||'',
-          subjectColor:ss.subject_color||''
+          picUserId:ss.pic_user_id||'',subjectColor:ss.subject_color||''
         };
       }) : []
     };
@@ -1403,13 +1492,72 @@ function createSemester_(u,d) {
   return {ok:true,semesterId:semId};
 }
 
+function assignSemesterSubjectStaff_(u,d) {
+  const semesterSubject=findBy_('SemesterSubjects','semester_subject_id',required_(d.semesterSubjectId,'Semester subject'));
+  if(!semesterSubject) throw new Error('Semester-subject mapping not found.');
+  const semester=findBy_('Semesters','semester_id',semesterSubject.semester_id);
+  if(!semester) throw new Error('Semester not found.');
+  if(TEST_CONTEXT_ && String(semester.class_id)!==String(TEST_CONTEXT_.classId)) {
+    throw new Error('Test account is limited to its selected class.');
+  }
+  if(!TEST_CONTEXT_ && !isSystemAdmin_(u.userId)) requireClassMember_(u.userId,semester.class_id);
+  const patch={};
+  [['lecturerUserId','lecturer_user_id','lecturer'],['picUserId','pic_user_id','pic']].forEach(([input,field,role])=>{
+    if(d[input]===undefined) return;
+    const targetId=String(d[input]||'').trim();
+    if(targetId && !activeClassMemberHasRole_(targetId,semester.class_id,role)) {
+      throw new Error('Pilih ahli kelas aktif dengan peranan '+(role==='lecturer'?'pensyarah':'PIC')+'.');
+    }
+    patch[field]=targetId;
+  });
+  if(!Object.keys(patch).length) throw new Error('Tiada penetapan pensyarah atau PIC untuk disimpan.');
+  const previous={lecturer_user_id:semesterSubject.lecturer_user_id||'',pic_user_id:semesterSubject.pic_user_id||''};
+  updateById_('SemesterSubjects','semester_subject_id',semesterSubject.semester_subject_id,patch);
+  let updatedSchedules=0;
+  if(patch.lecturer_user_id!==undefined&&previous.lecturer_user_id!==patch.lecturer_user_id) {
+    getRows_('ClassSessions').filter(row=>row.semester_subject_id===semesterSubject.semester_subject_id&&
+      String(row.lecturer_user_id||'')!==patch.lecturer_user_id).forEach(session=>{
+      const old=Object.assign({},session),version=Number(session.version||1)+1;
+      const changes={lecturer_user_id:patch.lecturer_user_id,version,updated_by:u.userId,updated_at:now_(),verification_status:'PENDING'};
+      updateById_('ClassSessions','session_id',session.session_id,changes);
+      append_('ScheduleHistory',[id_('SH'),session.session_id,version,JSON.stringify(old),
+        JSON.stringify(Object.assign({},old,changes)),'Penetapan pensyarah subjek dikemas kini','PENDING',u.userId,'',now_()]);
+      updatedSchedules++;
+    });
+  }
+  audit_(u.userId,'ASSIGN_SEMESTER_SUBJECT_STAFF','SemesterSubjects',semesterSubject.semester_subject_id,previous,patch);
+  return {ok:true,message:'Penetapan pensyarah dan PIC berjaya dikemas kini.',semesterSubjectId:semesterSubject.semester_subject_id,updatedSchedules};
+}
+
+function linkSemesterSubject_(u,d) {
+  const semester=findBy_('Semesters','semester_id',required_(d.semesterId,'Semester'));
+  if(!semester) throw new Error('Semester not found.');
+  if(TEST_CONTEXT_ && String(semester.class_id)!==String(TEST_CONTEXT_.classId)) {
+    throw new Error('Test account is limited to its selected class.');
+  }
+  if(!TEST_CONTEXT_ && !isSystemAdmin_(u.userId)) requireClassMember_(u.userId,semester.class_id);
+  const subject=findBy_('Subjects','subject_id',required_(d.subjectId,'Subject'));
+  if(!subject) throw new Error('Subject not found.');
+  if(getRows_('SemesterSubjects').some(row=>row.semester_id===semester.semester_id&&row.subject_id===subject.subject_id)) {
+    throw new Error('Subject is already linked to this semester.');
+  }
+  const semesterSubjectId=id_('SS');
+  append_('SemesterSubjects',[semesterSubjectId,semester.semester_id,subject.subject_id,'',d.subjectColor||'#DCEBFF','active','']);
+  audit_(u.userId,'LINK_SUBJECT_TO_SEMESTER','SemesterSubjects',semesterSubjectId,null,{
+    semester_id:semester.semester_id,subject_id:subject.subject_id
+  });
+  return {ok:true,message:'Subjek dipautkan kepada semester. Tetapkan pensyarah, PIC dan jadual sebelum pelajar dapat melihatnya.',semesterSubjectId:semesterSubjectId};
+}
+
 function listSchedules_(u,d) {
   requireClassMember_(u.userId,d.classId);
   const semester=findBy_('Semesters','semester_id',d.semesterId);
   if (!semester || semester.class_id!==d.classId) throw new Error('Semester not found in this class.');
   const ssIds=getRows_('SemesterSubjects').filter(x=>x.semester_id===d.semesterId).map(x=>x.semester_subject_id);
-  const allowedIds=String(getRows_('ClassMembers').find(x=>x.user_id===u.userId&&x.class_id===d.classId&&x.membership_status==='active')?.member_role||'').toLowerCase()==='lecturer'
-    ?lecturerScheduleSubjectIds_(u.userId):ssIds;
+  const memberRole=String(getRows_('ClassMembers').find(x=>x.user_id===u.userId&&x.class_id===d.classId&&x.membership_status==='active')?.member_role||'').toLowerCase();
+  const allowedIds=memberRole==='lecturer'?lecturerScheduleSubjectIds_(u.userId):
+    memberRole==='pic'?assignedSemesterSubjectIds_('pic',u.userId):
+    memberRole==='student'?studentVisibleSemesterSubjectIds_(''):ssIds;
   const rows=getRows_('ClassSessions').filter(x=>allowedIds.includes(x.semester_subject_id)&&ssIds.includes(x.semester_subject_id));
   const series=getRows_('ScheduleSeries').filter(x=>allowedIds.includes(x.semester_subject_id)&&ssIds.includes(x.semester_subject_id));
   return {ok:true,items:rows,series:series};
@@ -1472,12 +1620,16 @@ function listAssignments_(u,d) {
   if (!semester || semester.class_id!==d.classId) throw new Error('Semester not found in this class.');
   const ssIds=getRows_('SemesterSubjects').filter(x=>x.semester_id===d.semesterId).map(x=>x.semester_subject_id);
   const role=String(getRows_('ClassMembers').find(x=>x.user_id===u.userId&&x.class_id===d.classId&&x.membership_status==='active')?.member_role||'').toLowerCase();
-  const allowedIds=role==='lecturer'?lecturerScheduleSubjectIds_(u.userId):ssIds;
-  const items=getRows_('Assignments').filter(x=>allowedIds.includes(x.semester_subject_id)&&ssIds.includes(x.semester_subject_id) && x.status!=='cancelled');
+  const allowedIds=role==='lecturer'?lecturerScheduleSubjectIds_(u.userId):
+    role==='pic'?assignedSemesterSubjectIds_('pic',u.userId):
+    role==='student'?studentVisibleSemesterSubjectIds_(''):ssIds;
+  const items=getRows_('Assignments').filter(x=>allowedIds.includes(x.semester_subject_id)&&ssIds.includes(x.semester_subject_id) &&
+    x.status!=='cancelled'&&(role!=='student'||x.status==='published'));
   const assignmentIds=items.map(x=>x.assignment_id);
   const progress=getRows_('StudentAssignmentProgress')
     .filter(x=>x.user_id===u.userId && assignmentIds.includes(x.assignment_id));
-  return {ok:true,items:items,progress:progress};
+  const assignmentResources=assignmentResourceLinks_(items);
+  return {ok:true,items:items,progress:progress,assignmentResources:assignmentResources};
 }
 
 function createAssignment_(u,d) {
@@ -1515,7 +1667,11 @@ function listResources_(u,d) {
   const semester=semesterSubject&&findBy_('Semesters','semester_id',semesterSubject.semester_id);
   if (!semester || semester.class_id!==d.classId) throw new Error('Subject not found in this class.');
   const member=getRows_('ClassMembers').find(x=>x.user_id===u.userId&&x.class_id===d.classId&&x.membership_status==='active');
-  if(String(member?.member_role||'').toLowerCase()==='lecturer') requireLecturerScheduleSubject_(u.userId,d.semesterSubjectId);
+  const role=String(member?.member_role||'').toLowerCase();
+  if(role==='lecturer'||role==='pic') requireAssignedRoleSubject_(role,u.userId,d.semesterSubjectId);
+  if(role==='student'&&!studentVisibleSemesterSubjectIds_(d.semesterSubjectId).includes(d.semesterSubjectId)) {
+    throw new Error('Subjek ini belum dikonfigurasi untuk dipaparkan kepada pelajar.');
+  }
   const rows=getRows_('Resources').filter(r=>r.semester_subject_id===d.semesterSubjectId && r.visibility!=='personal' && r.visibility!=='archived');
   return {ok:true,items:rows};
 }
@@ -1525,10 +1681,15 @@ function listCalendarEvents_(u,d) {
   const semester=findBy_('Semesters','semester_id',d.semesterId);
   if (!semester || semester.class_id!==d.classId) throw new Error('Semester not found in this class.');
   const member=getRows_('ClassMembers').find(x=>x.user_id===u.userId&&x.class_id===d.classId&&x.membership_status==='active');
-  const allowedIds=String(member?.member_role||'').toLowerCase()==='lecturer'?lecturerScheduleSubjectIds_(u.userId):null;
+  const role=String(member?.member_role||'').toLowerCase();
+  const allowedIds=role==='lecturer'?lecturerScheduleSubjectIds_(u.userId):
+    role==='pic'?assignedSemesterSubjectIds_('pic',u.userId):
+    role==='student'?studentVisibleSemesterSubjectIds_(''):null;
+  const scopedRole=role==='lecturer'||role==='pic';
   const items=getRows_('CalendarEvents')
     .filter(x=>x.semester_id===d.semesterId && x.visibility!=='personal' && x.visibility!=='archived' &&
-      (!allowedIds||!x.semester_subject_id||allowedIds.includes(x.semester_subject_id)));
+      (scopedRole?!!x.semester_subject_id&&allowedIds.includes(x.semester_subject_id):
+        !allowedIds||allowedIds.length>0&&(!x.semester_subject_id||allowedIds.includes(x.semester_subject_id))));
   return {ok:true,items:items};
 }
 
