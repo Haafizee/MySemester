@@ -470,6 +470,30 @@ function renderSubjectAssignmentPanel() {
     </article>`;
   }).join('')||(query?'<p class="muted">Tiada pemetaan sepadan dengan carian.</p>':'<p class="muted">Tiada subjek dipautkan kepada semester ini. Tambahkan subjek untuk membina pemetaan kelas.</p>');
 }
+function groupBySubject(records,subjectIdOf,subjectNameOf) {
+  const groups=new Map();
+  records.forEach(record=>{
+    const subjectId=subjectIdOf(record)||'general';
+    if(!groups.has(subjectId)) groups.set(subjectId,{subjectId,subjectName:subjectNameOf(subjectId),items:[]});
+    groups.get(subjectId).items.push(record);
+  });
+  return Array.from(groups.values()).sort((a,b)=>a.subjectName.localeCompare(b.subjectName));
+}
+function subjectDisclosure(group,countLabel,content) {
+  return `<details class="subject-disclosure">
+    <summary><span class="subject-disclosure-title">${escapeHtml(group.subjectName)}</span><span class="subject-disclosure-count">${group.items.length} ${escapeHtml(countLabel)}</span></summary>
+    <div class="subject-disclosure-body">${content}</div>
+  </details>`;
+}
+function populateSubjectFilter(selector,includeGeneral=false) {
+  const select=$(selector);
+  if(!select)return;
+  const value=select.value||'all';
+  const options=(currentClass?.semesterSubjects||[]).filter(subject=>!workspaceData?.semesterId||subject.semesterId===workspaceData.semesterId).map(subject=>
+    `<option value="${escapeHtml(subject.semesterSubjectId)}">${escapeHtml([subject.subjectCode,subject.subjectName].filter(Boolean).join(' · ')||'Subjek')}</option>`);
+  select.innerHTML=`<option value="all">Semua subjek</option>${includeGeneral?'<option value="general">Umum / tanpa subjek</option>':''}${options.join('')}`;
+  select.value=Array.from(select.options).some(option=>option.value===value)?value:'all';
+}
 function renderStudentWorkspace(errorMessage='') {
   const data=workspaceData||{};
   const role=currentClassRole();
@@ -489,22 +513,39 @@ function renderStudentWorkspace(errorMessage='') {
   show('#eventFormWrap',canCreateEvent);
   show('#eventAddBtn',canCreateEvent);
   const assignmentFilter=$('#pbSubjectFilter')?.value||'all';
+  const assignmentQuery=($('#pbSearch')?.value||'').trim().toLowerCase();
   const assignments=(data.assignments||[]).filter(a=>{
     const progress=progressByAssignment[a.assignment_id];
     const progressState=progress?.progress_status==='completed'?'completed':'active';
     const matchesStatus=status==='all'||progressState===status;
     const matchesProgressFilter=($('#pbStatusFilter')?.value||'all')==='all'||
       (($('#pbStatusFilter')?.value==='done')===(progressState==='completed'));
-    return inYear(a.due_at)&&matchesStatus&&matchesProgressFilter&&(category==='all'||category==='pb');
+    const matchesQuery=!assignmentQuery||[a.title,a.description,a.assignment_type,subjects[a.semester_subject_id]?.subjectName]
+      .join(' ').toLowerCase().includes(assignmentQuery);
+    return inYear(a.due_at)&&matchesStatus&&matchesProgressFilter&&matchesQuery&&(category==='all'||category==='pb');
   });
   const filteredAssignments=assignments.filter(a=>assignmentFilter==='all'||a.semester_subject_id===assignmentFilter);
   const schedules=data.schedules||[];
+  populateSubjectFilter('#calendarSubjectFilter',true);
+  populateSubjectFilter('#resourceSubjectFilter',true);
   const events=(data.events||[]).filter(event=>{
     const type=String(event.event_category||'').toLowerCase();
     const matchesCategory=category==='all'||(category==='pb'?(type.includes('pb')||type.includes('pbs')||type.includes('penilaian')):type.includes(category));
-    return matchesCategory&&inYear(event.start_at);
+    const matchesSubject=($('#calendarSubjectFilter')?.value||'all')==='all'||
+      (event.semester_subject_id||'general')===$('#calendarSubjectFilter').value;
+    const matchesQuery=!($('#calendarSearch')?.value||'').trim()||
+      [event.title,event.description,event.event_category,subjects[event.semester_subject_id]?.subjectName]
+        .join(' ').toLowerCase().includes($('#calendarSearch').value.trim().toLowerCase());
+    return matchesCategory&&matchesSubject&&matchesQuery&&inYear(event.start_at);
   });
-  const resources=(data.resources||[]).filter(resource=>inYear(resource.created_at)&&(category==='all'||category==='academic'));
+  const resourceQuery=($('#resourceSearch')?.value||'').trim().toLowerCase();
+  const resources=(data.resources||[]).filter(resource=>{
+    const matchesSubject=($('#resourceSubjectFilter')?.value||'all')==='all'||
+      (resource.semester_subject_id||'general')===$('#resourceSubjectFilter').value;
+    const matchesQuery=!resourceQuery||[resource.resource_name,resource.description,resource.resource_type,
+      subjects[resource.semester_subject_id]?.subjectName].join(' ').toLowerCase().includes(resourceQuery);
+    return inYear(resource.created_at)&&matchesSubject&&matchesQuery&&(category==='all'||category==='academic');
+  });
   const calendarSubjects=Object.fromEntries((currentClass?.semesterSubjects||[]).map(subject=>[
     subject.semesterSubjectId,{subjectName:subject.subjectName,subjectColor:subject.subjectColor||''}
   ]));
@@ -512,8 +553,11 @@ function renderStudentWorkspace(errorMessage='') {
     renderWeeklyScheduleCalendar({sessions:schedules,series:data.scheduleSeries||[],events:data.events||[],
       subjects:calendarSubjects,date:scheduleCalendarDate,scope:'global',query:scheduleCalendarSearch,
       subjectFilter:scheduleCalendarSubject});
+  const assignmentGroups=groupBySubject(filteredAssignments,a=>a.semester_subject_id,
+    subjectId=>subjects[subjectId]?.subjectName||'Subjek umum');
   $('#assignmentList').innerHTML=errorMessage?`<p class="form-message error">${escapeHtml(errorMessage)}</p>`:
-    filteredAssignments.length?filteredAssignments.map(a=>{
+    filteredAssignments.length?assignmentGroups.map(group=>subjectDisclosure(group,'PB',
+      group.items.map(a=>{
       const progress=progressByAssignment[a.assignment_id]||{};
       const attachmentHtml=(data.assignmentResources||[]).filter(link=>link.assignment_id===a.assignment_id).map(link=>{
         const resource=(data.resources||[]).find(item=>item.resource_id===link.resource_id);
@@ -534,20 +578,21 @@ function renderStudentWorkspace(errorMessage='') {
         <h3>${escapeHtml(a.title)}</h3><p class="muted small">${escapeHtml(subjects[a.semester_subject_id]?.subjectName||'')} · ${escapeHtml(a.assignment_type||'PB')} · ${escapeHtml(a.marks_percentage||0)}%</p>
         </div><span class="status ${progress.progress_status==='completed'?'active':'draft'}">${escapeHtml(progress.progress_status||a.status||'published')}</span></div>
         <p>${escapeHtml(a.description||'')}</p><p class="muted small">Tarikh hantar: ${escapeHtml(a.due_at||'—')} · Kaedah: ${escapeHtml(a.submission_method||'—')}</p>${attachmentHtml?`<p class="muted small"><strong>Bahan PB:</strong> ${attachmentHtml}</p>`:''}${progressEditor}</article>`;
-    }).join(''):'<p class="muted">Tiada tugasan PB untuk semester ini.</p>';
+    }).join(''))).join(''):'<p class="muted">Tiada tugasan PB untuk semester ini.</p>';
   const sortedEvents=events.slice().sort((a,b)=>String(a.start_at||'').localeCompare(String(b.start_at||'')));
   $('#calendarList').innerHTML=errorMessage?`<p class="form-message error">${escapeHtml(errorMessage)}</p>`:
-    sortedEvents.length?sortedEvents.map(event=>`<article class="role-lab-list-row"><div><strong>${escapeHtml(event.title)}</strong><small>${escapeHtml(event.event_category||'Acara')}${event.description?' · '+escapeHtml(event.description):''}</small></div><time>${escapeHtml(event.start_at||'')}${event.end_at?' – '+escapeHtml(event.end_at):''}</time></article>`).join(''):'<p class="muted">Tiada acara kalendar untuk semester ini.</p>';
+    sortedEvents.length?groupBySubject(sortedEvents,event=>event.semester_subject_id,
+      subjectId=>subjects[subjectId]?.subjectName||(subjectId==='general'?'Umum / tanpa subjek':'Subjek')).map(group=>subjectDisclosure(group,'acara',
+        group.items.map(event=>`<article class="role-lab-list-row"><div><strong>${escapeHtml(event.title)}</strong><small>${escapeHtml(event.event_category||'Acara')}${event.description?' · '+escapeHtml(event.description):''}</small></div><time>${escapeHtml(event.start_at||'')}${event.end_at?' – '+escapeHtml(event.end_at):''}</time></article>`).join('')
+      )).join(''):'<p class="muted">Tiada acara kalendar untuk semester ini.</p>';
   $('#resourcesList').innerHTML=errorMessage?`<p class="form-message error">${escapeHtml(errorMessage)}</p>`:
-    resources.length?Object.entries(resources.reduce((groups,resource)=>{
-      const subjectId=resource.semester_subject_id||'general';
-      (groups[subjectId]||(groups[subjectId]=[])).push(resource);
-      return groups;
-    },{})).map(([subjectId,items])=>`<section class="subject-resource-group"><h3>${escapeHtml(subjects[subjectId]?.subjectName||'Sumber umum')}</h3>${items.map(resource=>{
+    resources.length?groupBySubject(resources,resource=>resource.semester_subject_id,
+      subjectId=>subjects[subjectId]?.subjectName||(subjectId==='general'?'Umum / tanpa subjek':'Subjek')).map(group=>subjectDisclosure(group,'sumber',
+      group.items.map(resource=>{
       const link=resource.url||resource.storage_file_id||'';
       return `<article class="role-lab-list-row"><div><strong>${escapeHtml(resource.resource_name||'Nota pembelajaran')}</strong><small>${escapeHtml(resource.description||'')}</small></div>
         ${/^https?:\/\//i.test(link)?`<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Buka sumber</a>`:''}</article>`;
-    }).join('')}</section>`).join(''):'<p class="muted">Tiada nota atau sumber dikongsi untuk semester ini.</p>';
+    }).join(''))).join(''):'<p class="muted">Tiada nota atau sumber dikongsi untuk semester ini.</p>';
   const configuredSubjects=subjectOptions(currentClass,data.semesterId);
   show('#studentConfigNotice',role==='student'&&!configuredSubjects.length);
   renderSubjectAssignmentPanel();
@@ -673,6 +718,11 @@ $('#subjectConfigRows')?.addEventListener('click',async e=>{
 });
 $('#pbSubjectFilter')?.addEventListener('change',()=>renderStudentWorkspace());
 $('#pbStatusFilter')?.addEventListener('change',()=>renderStudentWorkspace());
+$('#pbSearch')?.addEventListener('input',()=>renderStudentWorkspace());
+$('#calendarSubjectFilter')?.addEventListener('change',()=>renderStudentWorkspace());
+$('#calendarSearch')?.addEventListener('input',()=>renderStudentWorkspace());
+$('#resourceSubjectFilter')?.addEventListener('change',()=>renderStudentWorkspace());
+$('#resourceSearch')?.addEventListener('input',()=>renderStudentWorkspace());
 ['#filterYearSelect','#filterCategorySelect','#filterStatusSelect'].forEach(selector=>{
   $(selector)?.addEventListener('change',()=>renderStudentWorkspace());
 });
@@ -1333,7 +1383,8 @@ function renderRoleLabWorkspace() {
     schedule:roleLabPaginate('schedule',sessions,searchRecord),
     assignments:roleLabPaginate('assignments',assignments,searchRecord,record=>record.assignment_type||'PB','Jenis'),
     resources:roleLabPaginate('resources',resources,record=>`${searchRecord(record)} ${roleLabSubjectName(record.semester_subject_id)}`,record=>roleLabSubjectName(record.semester_subject_id),'Subjek'),
-    calendar:roleLabPaginate('calendar',events,searchRecord,record=>record.event_category||'Acara','Kategori'),
+    calendar:roleLabPaginate('calendar',events,searchRecord,
+      record=>record.semester_subject_id?roleLabSubjectName(record.semester_subject_id):'Umum / tanpa subjek','Subjek'),
     members:roleLabPaginate('members',members,searchRecord,record=>record.role||'Ahli','Peranan')
   };
   const listPage=listRecords[activeRoleLabTab];
@@ -1367,7 +1418,10 @@ function renderRoleLabWorkspace() {
   } else if(activeRoleLabTab==='schedule') {
     content=`${header}<section class="role-lab-card"><div class="role-lab-card-head"><div><h3>Jadual kelas</h3><p class="muted small">Paparan minggu mengikut semester aktif.</p></div>${roleLabAllowed('schedule.edit')?'<button class="btn btn-small" data-role-action="new-schedule">Tambah sesi</button>':''}</div>${renderWeeklyScheduleCalendar({sessions,series:ctx.scheduleSeries||[],events,date:roleLabCalendarDate,scope:'role',query:roleLabListState.schedule?.query||'',subjectFilter:roleLabListState.schedule?.subject||'all',subjects:calendarSubjects})}</section><div id="roleLabEditor"></div>`;
   } else if(activeRoleLabTab==='assignments') {
-    content=`${header}<section class="role-lab-card"><div class="role-lab-card-head"><div><h3>Penilaian Berterusan</h3><p class="muted small">Setiap PB terikat kepada subjek dalam semester aktif.</p></div>${roleLabAllowed('pb.create')?'<button class="btn btn-small" data-role-action="new-pb">Tambah PB</button>':''}</div><div class="role-lab-records">${listPage.items.map(a=>{
+    const assignmentGroups=groupBySubject(listPage.items,a=>a.semester_subject_id,
+      subjectId=>roleLabSubjectName(subjectId));
+    content=`${header}<section class="role-lab-card"><div class="role-lab-card-head"><div><h3>Penilaian Berterusan</h3><p class="muted small">Setiap PB terikat kepada subjek dalam semester aktif.</p></div>${roleLabAllowed('pb.create')?'<button class="btn btn-small" data-role-action="new-pb">Tambah PB</button>':''}</div>${assignmentGroups.map(group=>subjectDisclosure(group,'PB',
+      `<div class="role-lab-records">${group.items.map(a=>{
       const progress=ownProgress.find(x=>x.assignment_id===a.assignment_id);
       const attachmentHtml=(ctx.assignmentResources||[]).filter(link=>link.assignment_id===a.assignment_id).map(link=>{
         const resource=resources.find(item=>item.resource_id===link.resource_id);
@@ -1377,14 +1431,17 @@ function renderRoleLabWorkspace() {
       }).filter(Boolean).join(' · ');
       const actions=role==='student'?`<button class="btn btn-light btn-small" data-role-action="progress-pb" data-id="${escapeHtml(a.assignment_id)}">Kemaskini kemajuan</button>`:`${roleLabAllowed('pb.edit')?`<button class="btn btn-light btn-small" data-role-action="edit-pb" data-id="${escapeHtml(a.assignment_id)}">Edit</button>`:''}${roleLabAllowed('pb.marks.manage')?`<button class="btn btn-light btn-small" data-role-action="mark-pb" data-id="${escapeHtml(a.assignment_id)}">Rekod markah</button>`:''}${roleLabAllowed('pb.delete')?`<button class="btn btn-danger-light btn-small" data-role-action="delete-pb" data-id="${escapeHtml(a.assignment_id)}">Arkib</button>`:''}`;
       return `<article class="role-lab-record"><div class="role-lab-record-main"><b>${escapeHtml(a.title||'Tugasan PB')}</b><span>${escapeHtml(roleLabSubjectName(a.semester_subject_id))} · ${escapeHtml(a.assignment_type||'PB')} · ${escapeHtml(a.marks_percentage||0)}%</span><small>Mula: ${escapeHtml(a.start_date||'—')} · Hantar: ${escapeHtml(a.due_at||'—')}</small>${attachmentHtml?`<small>Bahan PB: ${attachmentHtml}</small>`:''}${role==='student'?`<div class="role-progress"><span>Kemajuan: ${Number(progress?.progress_percentage||0)}%</span><div><i style="width:${Math.max(0,Math.min(100,Number(progress?.progress_percentage||0)))}%"></i></div></div>`:''}</div><div class="role-lab-record-actions">${actions}</div></article>`;
-    }).join('')||`<p class="muted">${escapeHtml(listPage.empty)}</p>`}</div>${listPage.pagination}</section><div id="roleLabEditor"></div>`;
+    }).join('')}</div>`)).join('')||`<p class="muted">${escapeHtml(listPage.empty)}</p>`}${listPage.pagination}</section><div id="roleLabEditor"></div>`;
   } else if(activeRoleLabTab==='resources') {
-    const groupedResources=listPage.items.reduce((groups,resource)=>{
-      const id=resource.semester_subject_id||'general';(groups[id]||(groups[id]=[])).push(resource);return groups;
-    },{});
-    content=`${header}<section class="role-lab-card"><div class="role-lab-card-head"><div><h3>Nota & sumber pembelajaran</h3><p class="muted small">Bahan disusun mengikut subjek semester ini.</p></div>${roleLabAllowed('resources.manage')?'<button class="btn btn-small" data-role-action="new-resource">Tambah sumber</button>':''}</div>${Object.entries(groupedResources).map(([subjectId,items])=>`<section class="subject-resource-group"><h4>${escapeHtml(roleLabSubjectName(subjectId))}</h4><div class="role-lab-records">${items.map(r=>`<article class="role-lab-record"><div class="role-lab-record-main"><b>${escapeHtml(r.resource_name||'Sumber pembelajaran')}</b><span>${escapeHtml(r.resource_type||'resource')}</span><small>${escapeHtml(r.description||'')}</small>${r.storage_file_id?`<a href="${escapeHtml(r.storage_file_id)}" target="_blank" rel="noopener">Buka sumber ↗</a>`:''}</div><div class="role-lab-record-actions">${roleLabAllowed('resources.manage')?`<button class="btn btn-light btn-small" data-role-action="edit-resource" data-id="${escapeHtml(r.resource_id)}">Edit</button>`:''}${roleLabAllowed('resources.delete')?`<button class="btn btn-danger-light btn-small" data-role-action="delete-resource" data-id="${escapeHtml(r.resource_id)}">Arkib</button>`:''}</div></article>`).join('')}</div></section>`).join('')||`<p class="muted">${escapeHtml(listPage.empty)}</p>`}${listPage.pagination}</section><div id="roleLabEditor"></div>`;
+    const resourceGroups=groupBySubject(listPage.items,r=>r.semester_subject_id,
+      subjectId=>roleLabSubjectName(subjectId));
+    content=`${header}<section class="role-lab-card"><div class="role-lab-card-head"><div><h3>Nota & sumber pembelajaran</h3><p class="muted small">Bahan disusun mengikut subjek semester ini.</p></div>${roleLabAllowed('resources.manage')?'<button class="btn btn-small" data-role-action="new-resource">Tambah sumber</button>':''}</div>${resourceGroups.map(group=>subjectDisclosure(group,'sumber',
+      `<div class="role-lab-records">${group.items.map(r=>`<article class="role-lab-record"><div class="role-lab-record-main"><b>${escapeHtml(r.resource_name||'Sumber pembelajaran')}</b><span>${escapeHtml(r.resource_type||'resource')}</span><small>${escapeHtml(r.description||'')}</small>${r.storage_file_id?`<a href="${escapeHtml(r.storage_file_id)}" target="_blank" rel="noopener noreferrer">Buka sumber ↗</a>`:''}</div><div class="role-lab-record-actions">${roleLabAllowed('resources.manage')?`<button class="btn btn-light btn-small" data-role-action="edit-resource" data-id="${escapeHtml(r.resource_id)}">Edit</button>`:''}${roleLabAllowed('resources.delete')?`<button class="btn btn-danger-light btn-small" data-role-action="delete-resource" data-id="${escapeHtml(r.resource_id)}">Arkib</button>`:''}</div></article>`).join('')}</div>`)).join('')||`<p class="muted">${escapeHtml(listPage.empty)}</p>`}${listPage.pagination}</section><div id="roleLabEditor"></div>`;
   } else if(activeRoleLabTab==='calendar') {
-    content=`${header}<section class="role-lab-card"><div class="role-lab-card-head"><div><h3>Kalendar & tarikh penting</h3><p class="muted small">Tarikh PB dan acara kelas.</p></div>${roleLabAllowed('calendar.create')?'<button class="btn btn-small" data-role-action="new-event">Tambah acara</button>':''}</div><div class="role-lab-records">${listPage.items.map(e=>`<article class="role-lab-record"><div class="role-lab-record-main"><b>${escapeHtml(e.title)}</b><span>${escapeHtml(e.event_category||'Acara')} · ${escapeHtml(e.start_at||'')}</span><small>${escapeHtml(e.description||'')}</small></div><div class="role-lab-record-actions">${roleLabAllowed('calendar.edit')?`<button class="btn btn-light btn-small" data-role-action="edit-event" data-id="${escapeHtml(e.event_id)}">Edit</button>`:''}${roleLabAllowed('calendar.delete')?`<button class="btn btn-danger-light btn-small" data-role-action="delete-event" data-id="${escapeHtml(e.event_id)}">Arkib</button>`:''}</div></article>`).join('')||`<p class="muted">${escapeHtml(listPage.empty)}</p>`}</div>${listPage.pagination}</section><div id="roleLabEditor"></div>`;
+    const eventGroups=groupBySubject(listPage.items,e=>e.semester_subject_id,
+      subjectId=>subjectId==='general'?'Umum / tanpa subjek':roleLabSubjectName(subjectId));
+    content=`${header}<section class="role-lab-card"><div class="role-lab-card-head"><div><h3>Kalendar & tarikh penting</h3><p class="muted small">Tarikh PB dan acara kelas, dikumpulkan mengikut subjek.</p></div>${roleLabAllowed('calendar.create')?'<button class="btn btn-small" data-role-action="new-event">Tambah acara</button>':''}</div>${eventGroups.map(group=>subjectDisclosure(group,'acara',
+      `<div class="role-lab-records">${group.items.map(e=>`<article class="role-lab-record"><div class="role-lab-record-main"><b>${escapeHtml(e.title)}</b><span>${escapeHtml(e.event_category||'Acara')} · ${escapeHtml(e.start_at||'')}</span><small>${escapeHtml(e.description||'')}</small></div><div class="role-lab-record-actions">${roleLabAllowed('calendar.edit')?`<button class="btn btn-light btn-small" data-role-action="edit-event" data-id="${escapeHtml(e.event_id)}">Edit</button>`:''}${roleLabAllowed('calendar.delete')?`<button class="btn btn-danger-light btn-small" data-role-action="delete-event" data-id="${escapeHtml(e.event_id)}">Arkib</button>`:''}</div></article>`).join('')}</div>`)).join('')||`<p class="muted">${escapeHtml(listPage.empty)}</p>`}${listPage.pagination}</section><div id="roleLabEditor"></div>`;
   } else if(activeRoleLabTab==='members') {
     content=`${header}<section class="role-lab-card"><h3>Ahli kelas</h3><p class="muted small">Senarai ahli kelas dan peranan yang ditetapkan.</p><div class="role-lab-records">${listPage.items.map(m=>`<article class="role-lab-record"><div class="role-lab-record-main"><b>${escapeHtml(m.name||m.userId)}</b><span>${escapeHtml(m.email||'Akaun ujian')} · ${escapeHtml(m.status||'active')}</span><small>ID: ${escapeHtml(m.userId)}</small></div><div class="role-lab-record-actions">${roleLabAllowed('members.roles.manage') && m.userId!==activeRoleTest.testUser.id?`<select data-member-role="${escapeHtml(m.userId)}"><option value="student" ${m.role==='student'?'selected':''}>Student</option><option value="pic" ${m.role==='pic'?'selected':''}>PIC</option><option value="lecturer" ${m.role==='lecturer'?'selected':''}>Lecturer</option><option value="ko" ${m.role==='ko'?'selected':''}>KO</option></select><button class="btn btn-light btn-small" data-role-action="save-member-role" data-id="${escapeHtml(m.userId)}">Simpan</button>`:`<span class="pill">${escapeHtml(m.role)}</span>`}</div></article>`).join('')||`<p class="muted">${escapeHtml(listPage.empty)}</p>`}</div>${listPage.pagination}</section>`;
   } else if(activeRoleLabTab==='reports') {

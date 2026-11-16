@@ -1799,6 +1799,97 @@ tr:hover td {
   opacity: 0.5;
 }
 
+.subject-list-controls {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.subject-list-controls select,
+.subject-list-controls input {
+  min-width: 130px;
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid #d5dfeb;
+  border-radius: 8px;
+  color: #334155;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+}
+
+.subject-list-controls input {
+  width: min(190px, 100%);
+}
+
+.subject-disclosure {
+  margin: 8px 0;
+  overflow: hidden;
+  border: 1px solid #e1e9f3;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.subject-disclosure > summary {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  color: #234568;
+  background: #f8faff;
+  cursor: pointer;
+  list-style: none;
+}
+
+.subject-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.subject-disclosure > summary::before {
+  width: 14px;
+  color: #718198;
+  content: "+";
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.subject-disclosure[open] > summary::before {
+  content: "−";
+}
+
+.subject-disclosure-title {
+  min-width: 0;
+  flex: 1;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.subject-disclosure-count {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #55708f;
+  background: #eaf1fa;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.subject-disclosure-body {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border-top: 1px solid #e9eff6;
+}
+
+.subject-disclosure-body > .role-lab-records {
+  gap: 7px;
+}
+
 .role-lab-table-wrap {
   max-height: 340px;
   overflow: auto;
@@ -2593,6 +2684,21 @@ tr:hover td {
   .role-lab-footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .subject-list-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .subject-list-controls select,
+  .subject-list-controls input {
+    min-width: 0;
+    flex: 1 1 135px;
+  }
+
+  .subject-list-controls button {
+    flex: 1 1 auto;
   }
 
   .role-lab-list-controls {

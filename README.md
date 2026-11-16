@@ -6,6 +6,8 @@ KO or a Class Admin can link a catalog subject to a semester and assign an activ
 
 Students see a subject only after the mapping is active, both assigned staff are active class members with the matching roles, and the subject has an active class session or recurring schedule. Student dashboards list published PB only. PB instructions and supporting materials are linked through `AssignmentResources`.
 
+PB, learning resources, and calendar events are grouped by subject in collapsible sections that start closed. Each list provides a compact subject filter and search.
+
 PICs can view and manage only their assigned subjects. Lecturers can view and manage only their assigned subjects that have an active schedule. KO and Class Admin can manage subject staffing and class-wide schedules.
 
 ## Class, subject, and lecturer relationships

@@ -553,9 +553,10 @@
           <div class="panel">
             <div class="section-heading">
               <div><h2>Penilaian Berterusan (PB)</h2><p class="muted">Tugasan, kuiz, projek, dan peratusan markah.</p></div>
-              <div class="btn-row">
+              <div class="subject-list-controls">
                 <select id="pbSubjectFilter"></select>
                 <select id="pbStatusFilter"><option value="all">Semua</option><option value="open">Belum siap</option><option value="done">Selesai</option></select>
+                <input id="pbSearch" type="search" placeholder="Cari PB..." aria-label="Cari penilaian PB">
                 <button id="assignmentAddBtn" class="btn btn-sm btn-primary" type="button" onclick="$('#assignmentFormWrap').toggleAttribute('open')">➕ Terbitkan PB</button>
               </div>
             </div>
@@ -582,7 +583,11 @@
           <div class="panel">
             <div class="section-heading">
               <div><h2>Kalendar &amp; Tarikh Penting</h2><p class="muted">Jadual cuti, takwim akademik, dan tarikh penghantaran.</p></div>
-              <button id="eventAddBtn" class="btn btn-sm btn-primary" type="button" onclick="$('#eventFormWrap').toggleAttribute('open')">➕ Tambah acara</button>
+              <div class="subject-list-controls">
+                <select id="calendarSubjectFilter" aria-label="Tapis kalendar mengikut subjek"><option value="all">Semua subjek</option></select>
+                <input id="calendarSearch" type="search" placeholder="Cari acara..." aria-label="Cari acara kalendar">
+                <button id="eventAddBtn" class="btn btn-sm btn-primary" type="button" onclick="$('#eventFormWrap').toggleAttribute('open')">➕ Tambah acara</button>
+              </div>
             </div>
             <div id="calendarList"></div>
           </div>
@@ -605,6 +610,10 @@
           <div class="panel">
             <div class="section-heading">
               <div><h2>Nota &amp; Sumber Pembelajaran</h2><p class="muted">Pautan slaid kuliah, artikel rujukan, dan panduan subjek.</p></div>
+              <div class="subject-list-controls">
+                <select id="resourceSubjectFilter" aria-label="Tapis sumber mengikut subjek"><option value="all">Semua subjek</option></select>
+                <input id="resourceSearch" type="search" placeholder="Cari sumber..." aria-label="Cari nota dan sumber">
+              </div>
             </div>
             <div id="resourcesList" class="role-lab-records"></div>
           </div>
