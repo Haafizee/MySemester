@@ -891,7 +891,7 @@ async function startRolePreview(role) {
     $('#adminView').classList.add('hidden');
     show('#studentView',true);
     show('#noClass',false);show('#classArea',true);
-    show('#previewBanner',true);show('#previewTestConsole',false);show('#roleLabWorkspace',true);
+    show('#filterToolbar',false);show('#previewTestConsole',false);show('#roleLabWorkspace',true);
     document.querySelectorAll('.tabs,.student-tab-content').forEach(el=>el.classList.add('hidden'));
     $('#welcomeName').textContent=result.testUser.name;
     $('#welcomeEmail').textContent=result.testUser.email;
@@ -912,7 +912,7 @@ async function startRolePreview(role) {
   } catch(error) {
     $('#previewMessage').textContent='Gagal memulakan ujian: '+error.message;
     if(!activeRoleTest) {
-      show('#studentView',false);show('#previewBanner',false);show('#previewTestConsole',false);show('#roleLabWorkspace',false);show('#adminView',true);
+      show('#studentView',false);show('#filterToolbar',true);show('#previewTestConsole',false);show('#roleLabWorkspace',false);show('#adminView',true);
     }
   } finally {
     rolePreviewStarting=false;
@@ -1136,7 +1136,7 @@ async function stopActiveRoleTest(returnToAdmin=true) {
   activeRoleTest=null;roleTestContextData=null;activeTestSemesterId=null;
   currentUser=authenticatedUser;
   if(returnToAdmin) {
-    show('#previewBanner',false);show('#previewTestConsole',false);
+    show('#filterToolbar',true);show('#previewTestConsole',false);
     show('#studentView',false);show('#adminView',true);
     $('#admin-panel-preview').classList.remove('hidden');
     document.querySelectorAll('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab==='preview'));

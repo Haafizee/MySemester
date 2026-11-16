@@ -19,11 +19,6 @@
 .role-matrix .perm-group td{background:#edf3fa;color:#173b65;font-weight:700;text-align:left}
 .role-matrix input[type=checkbox]{width:16px;height:16px;accent-color:#0c4da2;cursor:pointer}
 .matrix-actions,.test-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.role-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px;margin:10px 0}
-.role-card{border:1px solid #dbe4ef;border-radius:10px;padding:10px 12px;display:flex;gap:9px;align-items:center;background:#fff;cursor:pointer;transition:all .15s}
-.role-card:has(input:checked){border-color:#0c4da2;background:#eff5ff;box-shadow:0 0 0 2px rgba(12,77,162,.15)}
-.role-card input{accent-color:#0c4da2}
-.role-card span{display:block;font-weight:700;font-size:12px}.role-card small{display:block;color:#60758e;font-size:11px}
 .test-console{margin-top:16px;border:1px solid #dbe4ef;border-radius:12px;padding:16px;background:#fff}
 .test-console textarea{width:100%;font-family:ui-monospace,monospace;min-height:100px}
 .test-console pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#10243b;color:#e9f2ff;border-radius:8px;padding:12px;max-height:240px;overflow:auto;font-size:12px}
@@ -168,19 +163,6 @@
 
       <!-- 2. AUTHENTICATED WORKSPACE VIEW -->
       <section id="appView" class="hidden">
-        <!-- Role Simulation Banner (When active) -->
-        <div id="previewBanner" class="preview-banner hidden">
-          <div>
-            <strong>🧪 Mod Ujian Peranan (Sandbox)</strong>
-            <div id="previewInfo"></div>
-            <div id="previewAccountId" class="preview-account"></div>
-          </div>
-          <div class="preview-actions">
-            <label class="small" style="display:flex;align-items:center;gap:6px">Tukar peranan: <select id="previewRoleSwitch"></select></label>
-            <button id="exitPreviewBtn" class="btn btn-sm btn-light" type="button">Tamatkan sesi ujian</button>
-          </div>
-        </div>
-
         <!-- Filter & Control Toolbar (Matching JPPI Dashboard Row) -->
         <section class="filter-toolbar" id="filterToolbar">
           <div class="filter-group">
@@ -603,47 +585,71 @@
              PANEL 7: MAKMAL PERANAN (ROLE SANDBOX & PERMISSION MATRIX)
              ============================================================= -->
         <section id="panel-preview" class="app-panel hidden">
-          <div class="panel" id="admin-panel-preview">
-            <div class="section-heading">
-              <div><h2>Makmal Peranan &amp; Matriks Kebenaran</h2><p class="muted">Uji capaian pengguna secara dinamik tanpa menjejaskan data produksi asal.</p></div>
-              <div class="matrix-actions">
-                <button id="matrixReloadBtn" class="btn btn-light btn-small" type="button">Muat semula</button>
-                <button id="matrixSaveBtn" class="btn btn-small" type="button">Simpan matriks</button>
-              </div>
-            </div>
-            <div id="matrixMessage" class="small form-message" aria-live="polite"></div>
-            <div class="role-matrix-wrap">
-              <table class="role-matrix">
-                <thead><tr><th>Fungsi / Kebenaran</th><th>Student</th><th>PIC</th><th>Lecturer</th><th>KO</th><th>Class Admin</th><th>System Admin</th></tr></thead>
-                <tbody id="permMatrix"><tr><td colspan="6">Memuatkan matriks...</td></tr></tbody>
-              </table>
-            </div>
-
-            <hr style="margin:20px 0;border:0;border-top:1px solid #e2e8f0">
-            <h3>Uji sistem sebagai peranan</h3>
-            <p class="muted small">Cipta sesi sandbox sementara untuk menyemak antaramuka bagi setiap jenis akaun.</p>
-            <div class="form-stack preview-form">
-              <label>Kelas untuk diuji <select id="previewClass"></select></label>
-              <div><span class="label-text">Pilih peranan:</span><div id="roleCards" class="role-cards"></div></div>
-              <button id="startPreviewBtn" class="btn" type="button">Cipta akaun sementara &amp; mulakan ujian</button>
-              <div id="previewMessage" class="small form-message" aria-live="polite"></div>
-            </div>
-            <h4 style="margin-top:18px">Sejarah sesi ujian</h4>
-            <div id="roleTestHistory" class="test-audit muted small">Belum ada sesi ujian dipaparkan.</div>
-          </div>
-
-          <!-- Role Simulation Workspace Sandbox Area -->
-          <section id="roleLabWorkspace" class="role-lab panel hidden">
+          <section id="roleLabWorkspace" class="role-lab panel hidden" aria-labelledby="roleLabTitle">
             <div class="role-lab-heading">
-              <div><span class="eyebrow">SIMULATED ROLE WORKSPACE</span><h2 id="roleLabTitle">Dashboard peranan</h2><p id="roleLabDescription" class="muted"></p></div>
-              <div class="role-lab-status"><span class="pill">SANDBOX</span><span id="roleLabRolePill" class="pill"></span></div>
+              <div class="role-lab-heading-copy">
+                <span class="role-lab-kicker"><span class="role-lab-live-dot"></span> SIMULATED ROLE WORKSPACE</span>
+                <h2 id="roleLabTitle">Dashboard peranan</h2>
+                <p id="roleLabDescription"></p>
+                <div class="role-lab-session-meta"><span id="previewInfo"></span><small id="previewAccountId"></small></div>
+              </div>
+              <div class="role-lab-heading-actions">
+                <div class="role-lab-status"><span class="role-lab-sandbox-pill">SANDBOX</span><span id="roleLabRolePill" class="role-lab-role-pill"></span></div>
+                <label class="role-lab-switch">Tukar peranan<select id="previewRoleSwitch"></select></label>
+                <button id="exitPreviewBtn" class="btn role-lab-exit-btn" type="button">Tamatkan sesi ujian</button>
+              </div>
             </div>
             <div id="roleLabStats" class="role-lab-stats"></div>
             <nav id="roleLabNav" class="role-lab-nav" aria-label="Menu ruang kerja peranan"></nav>
             <div id="roleLabContent" class="role-lab-content"></div>
-            <section class="role-lab-card role-lab-audit-panel" style="margin-top:16px"><div class="role-lab-card-head"><div><h3>Log aktiviti sesi</h3><p class="muted small">Tindakan sandbox oleh akaun sementara.</p></div><button id="roleLabAuditRefreshBtn" type="button" class="btn btn-light btn-small">Muat semula log</button></div><div id="roleLabAudit" class="test-audit muted small">Belum ada aktiviti.</div></section>
+            <section class="role-lab-card role-lab-audit-panel">
+              <div class="role-lab-card-head">
+                <div><h3>Log aktiviti sesi</h3><p class="muted small">Tindakan sandbox oleh akaun sementara.</p></div>
+                <button id="roleLabAuditRefreshBtn" type="button" class="btn btn-light btn-small">Muat semula log</button>
+              </div>
+              <div id="roleLabAudit" class="test-audit muted small">Belum ada aktiviti.</div>
+            </section>
             <div class="role-lab-footer"><span>🧪 Perubahan disimpan dalam sandbox sesi ujian ini.</span><button id="roleLabRefreshBtn" type="button" class="btn btn-light btn-small">Muat semula data</button></div>
           </section>
+
+          <section class="role-test-panel panel" id="admin-panel-preview" aria-labelledby="roleTestTitle">
+            <div class="section-heading">
+              <div><span class="eyebrow">PERSEKITARAN UJIAN</span><h2 id="roleTestTitle">Uji sistem sebagai peranan</h2><p class="muted">Cipta sesi sementara untuk menyemak paparan dan fungsi mengikut peranan. Data ujian diasingkan daripada data produksi.</p></div>
+            </div>
+            <div class="role-test-form">
+              <label>Kelas untuk diuji <select id="previewClass"></select></label>
+              <fieldset class="role-test-role-fieldset">
+                <legend>Pilih peranan</legend>
+                <div id="roleCards" class="role-cards"></div>
+              </fieldset>
+              <button id="startPreviewBtn" class="btn" type="button">Cipta akaun sementara &amp; mulakan ujian</button>
+              <div id="previewMessage" class="small form-message" aria-live="polite"></div>
+            </div>
+            <div class="role-test-history">
+              <div class="role-lab-card-head"><div><h3>Sejarah sesi ujian</h3><p class="muted small">Semak log atau tamatkan sesi sementara yang masih aktif.</p></div></div>
+              <div id="roleTestHistory" class="test-audit muted small">Belum ada sesi ujian dipaparkan.</div>
+            </div>
+          </section>
+
+          <details id="rolePermissionSettings" class="role-permission-settings panel">
+            <summary><span><strong>Fungsi / Kebenaran</strong><small>Urus tetapan akses bagi setiap peranan</small></span><span class="role-permission-toggle">Papar matriks</span></summary>
+            <div class="role-permission-content">
+              <div class="section-heading">
+                <div><h3>Matriks kebenaran</h3><p class="muted small">Perubahan pada matriks akan mempengaruhi capaian peranan.</p></div>
+                <div class="matrix-actions">
+                  <button id="matrixReloadBtn" class="btn btn-light btn-small" type="button">Muat semula</button>
+                  <button id="matrixSaveBtn" class="btn btn-small" type="button">Simpan matriks</button>
+                </div>
+              </div>
+              <div id="matrixMessage" class="small form-message" aria-live="polite"></div>
+              <div class="role-matrix-wrap">
+                <table class="role-matrix">
+                  <thead><tr><th>Fungsi / Kebenaran</th><th>Student</th><th>PIC</th><th>Lecturer</th><th>KO</th><th>Class Admin</th><th>System Admin</th></tr></thead>
+                  <tbody id="permMatrix"><tr><td colspan="7">Matriks kebenaran akan dimuatkan apabila dibuka.</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </details>
 
           <!-- Maintenance Diagnostic Console -->
           <details id="previewTestConsole" class="test-console hidden">
