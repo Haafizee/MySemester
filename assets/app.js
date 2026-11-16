@@ -1,4 +1,4 @@
-console.log('MySemester app.js v1.4 (Development Mode + high performance) loaded');
+console.log('MySemester app.js v1.5 (Subject offerings + student selection) loaded');
 let idToken = null;
 let devToken = null;
 
@@ -43,9 +43,9 @@ function rolePermission(role, permission) {
   const permissions={
     student:['class.view','semester.view','schedule.view','pb.view','pb.progress.update','resources.view','calendar.view'],
     pic:['class.view','semester.view','schedule.view','schedule.edit','schedule.delete','pb.view','resources.view','calendar.view','calendar.create','members.view','reports.view'],
-    lecturer:['class.view','semester.view','schedule.view','schedule.edit','schedule.verify','schedule.delete','pb.view','pb.create','pb.edit','pb.delete','pb.marks.manage','resources.view','resources.manage','resources.delete','calendar.view','calendar.create','calendar.edit','calendar.delete','members.view','reports.view'],
-    ko:['class.view','semester.view','semester.manage','schedule.view','schedule.edit','schedule.verify','schedule.delete','pb.view','pb.create','pb.edit','pb.delete','resources.view','resources.manage','resources.delete','calendar.view','calendar.create','calendar.edit','calendar.delete','members.view','members.roles.manage','reports.view','notifications.manage'],
-    class_admin:['class.activate','class.view','semester.view','semester.manage','schedule.view','schedule.edit','schedule.verify','schedule.delete','pb.view','pb.create','pb.edit','pb.delete','pb.marks.manage','resources.view','resources.manage','resources.delete','calendar.view','calendar.create','calendar.edit','calendar.delete','members.view','members.roles.manage','reports.view','notifications.manage']
+    lecturer:['class.view','semester.view','subject.offerings.manage','schedule.view','schedule.edit','schedule.verify','schedule.delete','pb.view','pb.create','pb.edit','pb.delete','pb.marks.manage','resources.view','resources.manage','resources.delete','calendar.view','calendar.create','calendar.edit','calendar.delete','members.view','reports.view'],
+    ko:['class.view','semester.view','semester.manage','subject.offerings.manage','schedule.view','schedule.edit','schedule.verify','schedule.delete','pb.view','pb.create','pb.edit','pb.delete','resources.view','resources.manage','resources.delete','calendar.view','calendar.create','calendar.edit','calendar.delete','members.view','members.roles.manage','reports.view','notifications.manage'],
+    class_admin:['class.activate','class.view','semester.view','semester.manage','subject.offerings.manage','schedule.view','schedule.edit','schedule.verify','schedule.delete','pb.view','pb.create','pb.edit','pb.delete','pb.marks.manage','resources.view','resources.manage','resources.delete','calendar.view','calendar.create','calendar.edit','calendar.delete','members.view','members.roles.manage','reports.view','notifications.manage']
   };
   const normalized=String(role||'').toLowerCase()==='admin'?'class_admin':String(role||'').toLowerCase();
   return (permissions[normalized]||[]).includes(permission);
@@ -55,7 +55,7 @@ function setNavigationAvailability(isLoggedIn,isSystemAdmin,hasClass) {
     ? (isSystemAdmin?['overview','classes','preview','users','data','guide']:
       ['overview','schedule','assignments','calendar','resources'])
     : ['overview','classes','schedule','assignments','calendar','resources','preview','users','data','guide'];
-  if(isLoggedIn&&!isSystemAdmin&&hasClass&&currentClass?.permissions?.includes('semester.manage')) allowed.push('subjects');
+  if(isLoggedIn&&!isSystemAdmin&&hasClass&&currentClass?.permissions?.includes('subject.offerings.manage')) allowed.push('subjects');
   document.querySelectorAll('[data-nav]').forEach(button=>{
     const key=button.dataset.nav;
     button.classList.toggle('hidden',!allowed.includes(key));
@@ -235,10 +235,9 @@ function populateWorkspaceFilters() {
 function subjectOptions(classInfo,semesterId) {
   return (classInfo?.semesterSubjects||[]).filter(s=>{
     if(semesterId&&s.semesterId!==semesterId) return false;
+    if(currentClassRole()==='student'&&!(classInfo?.selectedSemesterSubjectIds||[]).includes(s.semesterSubjectId)) return false;
     if(currentClassRole()==='lecturer') {
-      return s.lecturerUserId===currentUser?.id &&
-        [...(workspaceData?.schedules||[]),...(workspaceData?.scheduleSeries||[])].some(item=>
-          item.semester_subject_id===s.semesterSubjectId&&!['cancelled','archived'].includes(String(item.status||'').toLowerCase()));
+      return s.lecturerUserId===currentUser?.id;
     }
     if(currentClassRole()==='pic') return s.picUserId===currentUser?.id;
     return true;
@@ -353,13 +352,18 @@ function renderWeeklyScheduleCalendar({sessions=[],series=[],events=[],subjects=
 function populateSubjectSelects() {
   const semesterId=$('#filterSemesterSelect')?.value||'';
   const subjects=subjectOptions(currentClass,semesterId);
-  const options=subjects.map(s=>`<option value="${escapeHtml(s.semesterSubjectId)}">${escapeHtml([s.subjectCode,s.subjectName].filter(Boolean).join(' · ')||s.subjectId)}</option>`).join('');
+  const scheduledIds=new Set([...(workspaceData?.schedules||[]),...(workspaceData?.scheduleSeries||[])]
+    .filter(item=>!['cancelled','archived'].includes(String(item.status||'').toLowerCase()))
+    .map(item=>item.semester_subject_id));
   ['#sessSubject','#pbSubject','#evSubject','#pbSubjectFilter'].forEach(selector=>{
     const select=$(selector);
     if(!select)return;
+    const selectable=selector==='#sessSubject'||currentClassRole()!=='lecturer'
+      ?subjects:subjects.filter(subject=>scheduledIds.has(subject.semesterSubjectId));
+    const options=selectable.map(s=>`<option value="${escapeHtml(s.semesterSubjectId)}">${escapeHtml([s.subjectCode,s.subjectName].filter(Boolean).join(' · ')||s.subjectId)}</option>`).join('');
     const allOption=selector==='#pbSubjectFilter'?'<option value="all">Semua subjek</option>':'';
     select.innerHTML=allOption+options;
-    select.disabled=!subjects.length;
+    select.disabled=!selectable.length;
   });
 }
 function currentClassRole() {
@@ -385,10 +389,19 @@ async function loadStudentWorkspace() {
       api('listCalendarEvents',params)
     ]);
     workspaceData={...workspaceData,schedules:schedules.items||[],scheduleSeries:schedules.series||[]};
-    const resources=await Promise.all(subjectOptions(currentClass,semesterId).map(subject=>
+    const selectableSubjects=subjectOptions(currentClass,semesterId);
+    const scheduledSubjectIds=new Set([...(schedules.items||[]),...(schedules.series||[])]
+      .filter(item=>!['cancelled','archived'].includes(String(item.status||'').toLowerCase()))
+      .map(item=>item.semester_subject_id));
+    const resourceSubjects=currentClassRole()==='student'
+      ?selectableSubjects.filter(subject=>(currentClass?.selectedSemesterSubjectIds||[]).includes(subject.semesterSubjectId))
+      :currentClassRole()==='lecturer'
+        ?selectableSubjects.filter(subject=>scheduledSubjectIds.has(subject.semesterSubjectId))
+        :selectableSubjects;
+    const resources=await Promise.all(resourceSubjects.map(subject=>
       api('listResources',{classId,semesterSubjectId:subject.semesterSubjectId})
     ));
-    const members=currentClass?.permissions?.includes('semester.manage')
+    const members=currentClass?.permissions?.includes('members.view')
       ?await api('listClassMembers',{classId}):{items:[]};
     workspaceData={
       ...workspaceData,
@@ -419,8 +432,7 @@ function renderSubjectAssignmentPanel() {
   semesterSelect.value=semesters.some(s=>s.semesterId===previous)?previous:defaultSemester;
   const semester=semesters.find(s=>s.semesterId===semesterSelect.value);
   const links=(currentClass?.semesterSubjects||[]).filter(s=>s.semesterId===semesterSelect.value);
-  const linkedSubjectIds=new Set(links.map(link=>link.subjectId));
-  const available=(currentClass?.availableSubjects||[]).filter(subject=>!linkedSubjectIds.has(subject.subject_id));
+  const available=(currentClass?.availableSubjects||[]);
   const classLabel=[currentClass?.className,currentClass?.classCode].filter(Boolean).join(' · ')||'Kelas';
   const sessionLabel=semester?.academicSession?` · Sesi ${escapeHtml(semester.academicSession)}`:'';
   $('#subjectConfigContext').innerHTML=`<span class="subject-config-context-label">Struktur pemetaan</span><strong>${escapeHtml(classLabel)}</strong><span>›</span><strong>${escapeHtml(semester?.semesterName||'Pilih semester')}${sessionLabel}</strong><span>›</span><span>Subjek · Pensyarah · PIC</span>`;
@@ -431,9 +443,24 @@ function renderSubjectAssignmentPanel() {
     ).join('')||'<option value="">Tiada subjek tersedia untuk dipautkan</option>';
     subjectLinkSelect.disabled=!available.length;
     const form=$('#subjectLinkForm');
-    if(form) form.classList.toggle('hidden',!currentClass?.permissions?.includes('semester.manage'));
+    if(form) form.classList.add('hidden');
+  }
+  const offeringForm=$('#subjectOfferingForm');
+  const canManageOfferings=currentClass?.permissions?.includes('subject.offerings.manage');
+  if(offeringForm) offeringForm.classList.toggle('hidden',!canManageOfferings);
+  const offeringSubject=$('#subjectOfferingSubject');
+  if(offeringSubject) {
+    const previousOfferingSubject=offeringSubject.value;
+    offeringSubject.innerHTML='<option value="">Tambah subjek baharu...</option>'+available.map(subject=>
+      `<option value="${escapeHtml(subject.subject_id)}">${escapeHtml([subject.subject_code,subject.subject_name].filter(Boolean).join(' · '))}</option>`
+    ).join('');
+    offeringSubject.value=available.some(subject=>subject.subject_id===previousOfferingSubject)?previousOfferingSubject:'';
+    show('#newSubjectFields',!offeringSubject.value);
+    $('#newSubjectCode')?.toggleAttribute('required',!offeringSubject.value);
+    $('#newSubjectName')?.toggleAttribute('required',!offeringSubject.value);
   }
   const members=workspaceData?.members||[];
+  const canAssignStaff=currentClass?.permissions?.includes('semester.manage');
   const scheduledIds=new Set([...(workspaceData?.schedules||[]),...(workspaceData?.scheduleSeries||[])]
     .filter(x=>!['cancelled','archived'].includes(String(x.status||'').toLowerCase()))
     .map(x=>x.semester_subject_id));
@@ -449,6 +476,27 @@ function renderSubjectAssignmentPanel() {
   const staffOptions=(role,selected)=>`<option value="">Belum ditetapkan</option>`+members
     .filter(member=>String(member.role||'').toLowerCase()===role)
     .map(member=>`<option value="${escapeHtml(member.userId)}" ${member.userId===selected?'selected':''}>${escapeHtml(member.name||member.userId)}</option>`).join('');
+  const offeringLecturer=$('#subjectOfferingLecturer');
+  if(offeringLecturer) {
+    const lecturers=members.filter(member=>String(member.role||'').toLowerCase()==='lecturer');
+    const self=currentClassRole()==='lecturer'&&currentUser?.id
+      ?[{userId:currentUser.id,name:currentUser.name,email:currentUser.email,role:'lecturer'}]:[];
+    const availableLecturers=[...lecturers.filter(member=>member.userId!==currentUser?.id),...self,...lecturers.filter(member=>member.userId===currentUser?.id)];
+    offeringLecturer.innerHTML=availableLecturers.map(member=>
+      `<option value="${escapeHtml(member.userId)}">${escapeHtml(member.name||member.email||member.userId)}</option>`
+    ).join('')||'<option value="">Tiada pensyarah berdaftar</option>';
+    offeringLecturer.value=currentClassRole()==='lecturer'?currentUser.id:(offeringLecturer.value||availableLecturers[0]?.userId||'');
+    offeringLecturer.disabled=currentClassRole()==='lecturer';
+    offeringLecturer.closest('label')?.classList.toggle('hidden',currentClassRole()==='lecturer');
+  }
+  const offeringPic=$('#subjectOfferingPic');
+  if(offeringPic) {
+    const pics=members.filter(member=>String(member.role||'').toLowerCase()==='pic');
+    offeringPic.innerHTML=pics.map(member=>
+      `<option value="${escapeHtml(member.userId)}">${escapeHtml(member.name||member.email||member.userId)}</option>`
+    ).join('')||'<option value="">Tiada PIC berdaftar</option>';
+    offeringPic.value=offeringPic.value||pics[0]?.userId||'';
+  }
   const query=($('#subjectConfigSearch')?.value||'').trim().toLowerCase();
   const filteredLinks=links.filter(link=>[
     link.subjectCode,link.subjectName,staffName(link.lecturerUserId),staffName(link.picUserId)
@@ -458,15 +506,15 @@ function renderSubjectAssignmentPanel() {
     const subjectLabel=[link.subjectCode,link.subjectName].filter(Boolean).join(' · ');
     return `<article class="subject-mapping-card">
       <header class="subject-mapping-card-head">
-        <div><span class="subject-mapping-code">${escapeHtml(link.subjectCode||'SUBJEK')}</span><h3>${escapeHtml(link.subjectName||'Subjek')}</h3></div>
+        <div><span class="subject-mapping-code">${escapeHtml(link.subjectCode||'SUBJEK')}</span><h3>${escapeHtml(link.subjectName||'Subjek')}</h3><small>${escapeHtml(link.offeringName||'Tawaran')}</small></div>
         <span class="status ${complete?'active':'draft'}">${complete?'Sedia untuk pelajar':'Belum lengkap'}</span>
       </header>
       <p class="subject-mapping-trail"><span>${escapeHtml(currentClass?.className||'Kelas')}</span><span>›</span><span>${escapeHtml(semester?.semesterName||'Semester')}</span><span>›</span><span>${escapeHtml(link.subjectCode||'Subjek')}</span></p>
-      <div class="subject-mapping-staff">
+      ${canAssignStaff?`<div class="subject-mapping-staff">
         <label><span>Pensyarah</span><select data-subject-staff="lecturerUserId" data-semester-subject="${escapeHtml(link.semesterSubjectId)}" aria-label="Pensyarah ${escapeHtml(subjectLabel)}">${staffOptions('lecturer',link.lecturerUserId)}</select><small>${escapeHtml(staffName(link.lecturerUserId))}</small></label>
         <label><span>PIC subjek</span><select data-subject-staff="picUserId" data-semester-subject="${escapeHtml(link.semesterSubjectId)}" aria-label="PIC ${escapeHtml(subjectLabel)}">${staffOptions('pic',link.picUserId)}</select><small>${escapeHtml(staffName(link.picUserId))}</small></label>
-      </div>
-      <footer class="subject-mapping-card-foot"><span>${scheduledIds.has(link.semesterSubjectId)?'Jadual aktif tersedia':'Jadual belum ditetapkan'}</span><button type="button" class="btn btn-light btn-small" data-save-subject-staff="${escapeHtml(link.semesterSubjectId)}">Simpan pemetaan</button></footer>
+      </div>`:`<div class="subject-mapping-staff"><label><span>Pensyarah</span><strong>${escapeHtml(staffName(link.lecturerUserId))}</strong></label><label><span>PIC subjek</span><strong>${escapeHtml(staffName(link.picUserId))}</strong></label></div>`}
+      <footer class="subject-mapping-card-foot"><span>${scheduledIds.has(link.semesterSubjectId)?'Jadual aktif tersedia':'Jadual belum ditetapkan'}</span>${canAssignStaff?`<button type="button" class="btn btn-light btn-small" data-save-subject-staff="${escapeHtml(link.semesterSubjectId)}">Simpan pemetaan</button>`:''}</footer>
     </article>`;
   }).join('')||(query?'<p class="muted">Tiada pemetaan sepadan dengan carian.</p>':'<p class="muted">Tiada subjek dipautkan kepada semester ini. Tambahkan subjek untuk membina pemetaan kelas.</p>');
 }
@@ -489,7 +537,14 @@ function populateSubjectFilter(selector,includeGeneral=false) {
   const select=$(selector);
   if(!select)return;
   const value=select.value||'all';
-  const options=(currentClass?.semesterSubjects||[]).filter(subject=>!workspaceData?.semesterId||subject.semesterId===workspaceData.semesterId).map(subject=>
+  const scheduledIds=new Set([...(workspaceData?.schedules||[]),...(workspaceData?.scheduleSeries||[])]
+    .filter(item=>!['cancelled','archived'].includes(String(item.status||'').toLowerCase()))
+    .map(item=>item.semester_subject_id));
+  const options=(currentClass?.semesterSubjects||[]).filter(subject=>
+    (!workspaceData?.semesterId||subject.semesterId===workspaceData.semesterId)&&
+    (currentClassRole()!=='student'||(currentClass?.selectedSemesterSubjectIds||[]).includes(subject.semesterSubjectId))&&
+    (currentClassRole()!=='lecturer'||scheduledIds.has(subject.semesterSubjectId))
+  ).map(subject=>
     `<option value="${escapeHtml(subject.semesterSubjectId)}">${escapeHtml([subject.subjectCode,subject.subjectName].filter(Boolean).join(' · ')||'Subjek')}</option>`);
   select.innerHTML=`<option value="all">Semua subjek</option>${includeGeneral?'<option value="general">Umum / tanpa subjek</option>':''}${options.join('')}`;
   select.value=Array.from(select.options).some(option=>option.value===value)?value:'all';
@@ -526,6 +581,9 @@ function renderStudentWorkspace(errorMessage='') {
   });
   const filteredAssignments=assignments.filter(a=>assignmentFilter==='all'||a.semester_subject_id===assignmentFilter);
   const schedules=data.schedules||[];
+  const scheduledSubjectIds=new Set([...schedules,...(data.scheduleSeries||[])]
+    .filter(item=>!['cancelled','archived'].includes(String(item.status||'').toLowerCase()))
+    .map(item=>item.semester_subject_id));
   populateSubjectFilter('#calendarSubjectFilter',true);
   populateSubjectFilter('#resourceSubjectFilter',true);
   const events=(data.events||[]).filter(event=>{
@@ -546,7 +604,10 @@ function renderStudentWorkspace(errorMessage='') {
       subjects[resource.semester_subject_id]?.subjectName].join(' ').toLowerCase().includes(resourceQuery);
     return inYear(resource.created_at)&&matchesSubject&&matchesQuery&&(category==='all'||category==='academic');
   });
-  const calendarSubjects=Object.fromEntries((currentClass?.semesterSubjects||[]).map(subject=>[
+  const calendarSubjects=Object.fromEntries((currentClass?.semesterSubjects||[]).filter(subject=>
+    (role!=='student'||(currentClass?.selectedSemesterSubjectIds||[]).includes(subject.semesterSubjectId))&&
+    (role!=='lecturer'||scheduledSubjectIds.has(subject.semesterSubjectId))
+  ).map(subject=>[
     subject.semesterSubjectId,{subjectName:subject.subjectName,subjectColor:subject.subjectColor||''}
   ]));
   $('#scheduleList').innerHTML=errorMessage?`<p class="form-message error">${escapeHtml(errorMessage)}</p>`:
@@ -593,10 +654,52 @@ function renderStudentWorkspace(errorMessage='') {
       return `<article class="role-lab-list-row"><div><strong>${escapeHtml(resource.resource_name||'Nota pembelajaran')}</strong><small>${escapeHtml(resource.description||'')}</small></div>
         ${/^https?:\/\//i.test(link)?`<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Buka sumber</a>`:''}</article>`;
     }).join(''))).join(''):'<p class="muted">Tiada nota atau sumber dikongsi untuk semester ini.</p>';
-  const configuredSubjects=subjectOptions(currentClass,data.semesterId);
+  const availableStudentOffers=(currentClass?.semesterSubjects||[]).filter(subject=>subject.semesterId===data.semesterId);
+  const configuredSubjects=role==='student'
+    ?availableStudentOffers.filter(subject=>(currentClass?.selectedSemesterSubjectIds||[]).includes(subject.semesterSubjectId))
+    :availableStudentOffers;
   show('#studentConfigNotice',role==='student'&&!configuredSubjects.length);
+  if(role==='student') {
+    const notice=$('#studentConfigNotice');
+    const hasOffers=availableStudentOffers.length>0;
+    notice?.querySelector('strong')&&(notice.querySelector('strong').textContent=hasOffers
+      ?'Pilih tawaran pensyarah untuk melihat jadual anda.'
+      :'Data subjek belum tersedia untuk semester ini.');
+    const paragraph=notice?.querySelector('p');
+    if(paragraph) paragraph.textContent=hasOffers
+      ?'Buka Jadual dan pilih pensyarah serta kumpulan bagi setiap subjek. Pilihan hanya mengubah jadual akaun anda.'
+      :'KO atau Pentadbir kelas perlu menetapkan pensyarah, PIC dan jadual aktif bagi subjek sebelum tawaran dipaparkan.';
+  }
+  renderStudentOfferingSelection(data.semesterId);
   renderSubjectAssignmentPanel();
   renderOverviewDashboard({...data,schedules,assignments,events,resources});
+}
+function renderStudentOfferingSelection(semesterId) {
+  const panel=$('#studentOfferingSelection');
+  if(!panel) return;
+  const isStudent=currentClassRole()==='student';
+  show('#studentOfferingSelection',isStudent);
+  if(!isStudent) return;
+  const offers=(currentClass?.semesterSubjects||[]).filter(item=>item.semesterId===semesterId);
+  const grouped=new Map();
+  offers.forEach(offer=>{
+    if(!grouped.has(offer.subjectId)) grouped.set(offer.subjectId,{subjectCode:offer.subjectCode,subjectName:offer.subjectName,offers:[]});
+    grouped.get(offer.subjectId).offers.push(offer);
+  });
+  panel.innerHTML=`<div class="section-heading"><div><h3>Pilih pensyarah dan kumpulan</h3>
+    <p class="muted small">Pilihan ini khusus untuk akaun anda. Jadual, PB dan sumber akan dipaparkan selepas anda memilih satu tawaran bagi setiap subjek.</p></div></div>
+    <div class="student-offering-list">${Array.from(grouped.entries()).map(([subjectId,group])=>{
+      const selected=(currentClass.selectedSemesterSubjectIds||[]).find(id=>group.offers.some(offer=>offer.semesterSubjectId===id))||'';
+      const options=group.offers.map(offer=>{
+        const label=[offer.offeringName||'Tawaran',offer.lecturerName||offer.lecturerEmail].filter(Boolean).join(' · ');
+        return `<option value="${escapeHtml(offer.semesterSubjectId)}" ${selected===offer.semesterSubjectId?'selected':''}>${escapeHtml(label)}</option>`;
+      }).join('');
+      return `<div class="student-offering-row"><div><strong>${escapeHtml([group.subjectCode,group.subjectName].filter(Boolean).join(' · '))}</strong>
+        <small>${group.offers.length} tawaran tersedia</small></div>
+        <select data-student-offering="${escapeHtml(subjectId)}" aria-label="Pilih pensyarah untuk ${escapeHtml(group.subjectName)}">
+          <option value="">Belum pilih</option>${options}</select>
+        <button class="btn btn-light btn-small" type="button" data-save-student-offering="${escapeHtml(subjectId)}">Simpan</button></div>`;
+    }).join('')||'<p class="muted">Belum ada tawaran subjek yang lengkap dengan pensyarah, PIC dan jadual.</p>'}</div>`;
 }
 function renderOverviewDashboard(viewData) {
   const data=viewData||workspaceData||{};
@@ -692,6 +795,60 @@ $('#subjectLinkForm')?.addEventListener('submit',async e=>{
     if(message) message.textContent='Gagal memautkan subjek: '+error.message;
     showToast('Gagal memautkan subjek: '+error.message,'error');
   }
+});
+$('#subjectOfferingSubject')?.addEventListener('change',()=>{
+  show('#newSubjectFields',!$('#subjectOfferingSubject').value);
+  $('#newSubjectCode')?.toggleAttribute('required',!$('#subjectOfferingSubject').value);
+  $('#newSubjectName')?.toggleAttribute('required',!$('#subjectOfferingSubject').value);
+});
+$('#subjectOfferingForm')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const message=$('#subjectConfigMessage');
+  const subjectId=$('#subjectOfferingSubject').value;
+  const payload={
+    semesterId:$('#subjectConfigSemester').value,
+    subjectId,
+    subjectCode:$('#newSubjectCode').value.trim(),
+    subjectName:$('#newSubjectName').value.trim(),
+    creditHour:Number($('#newSubjectCredit').value||0),
+    offeringName:$('#subjectOfferingName').value.trim(),
+    lecturerUserId:$('#subjectOfferingLecturer').value||currentUser?.id,
+    picUserId:$('#subjectOfferingPic').value
+  };
+  if(message) message.textContent='Menyimpan tawaran subjek...';
+  try {
+    const result=await api('createSubjectOffering',payload);
+    const refreshed=await api('bootstrap',{});
+    workspaceData={...(workspaceData||{}),classes:refreshed.classes||[]};
+    currentClass=(refreshed.classes||[]).find(item=>item.classId===currentClass?.classId)||null;
+    await loadStudentWorkspace();
+    e.target.reset();
+    if(message) message.textContent=result.message;
+    showToast(result.message||'Tawaran subjek disimpan.');
+  } catch(error) {
+    if(message) message.textContent='Gagal mencipta tawaran: '+error.message;
+    showToast('Gagal mencipta tawaran: '+error.message,'error');
+  }
+});
+$('#studentOfferingSelection')?.addEventListener('click',async e=>{
+  const button=e.target.closest('[data-save-student-offering]');
+  if(!button) return;
+  const subjectId=button.dataset.saveStudentOffering;
+  const select=$(`[data-student-offering="${CSS.escape(subjectId)}"]`);
+  button.disabled=true;
+  try {
+    const result=await api('selectStudentSubjectOffering',{
+      classId:currentClass.classId,semesterId:workspaceData?.semesterId,subjectId,
+      semesterSubjectId:select?.value||''
+    });
+    const refreshed=await api('bootstrap',{});
+    workspaceData={...(workspaceData||{}),classes:refreshed.classes||[]};
+    currentClass=(refreshed.classes||[]).find(item=>item.classId===currentClass?.classId)||null;
+    await loadStudentWorkspace();
+    showToast(result.message||'Pilihan disimpan.');
+  } catch(error) {
+    showToast('Gagal menyimpan pilihan: '+error.message,'error');
+  } finally { button.disabled=false; }
 });
 $('#subjectConfigRows')?.addEventListener('click',async e=>{
   const button=e.target.closest('[data-save-subject-staff]');
@@ -998,6 +1155,10 @@ function renderSelectedAdminClass() {
   $('#activateClassBtn').disabled=!canActivate;
   $('#activateClassHint').textContent=c.status==='active'?'Kelas telah diaktifkan.':`Perlu sekurang-kurangnya 3 semester sebelum diaktifkan (${c.semesterCount}/3).`;
   $('#createInviteBtn').disabled=c.status!=='active';
+  $('#lecturerDirectoryList').innerHTML=(c.lecturers||[]).map(lecturer=>`
+    <div class="lecturer-directory-row"><div><strong>${escapeHtml(lecturer.fullName)}</strong><small>${escapeHtml(lecturer.email)}</small></div>
+    <span class="status ${lecturer.status==='linked'?'active':lecturer.status==='conflict'?'draft':'pending'}">${escapeHtml(lecturer.status)}</span></div>`
+  ).join('')||'<p class="muted small">Belum ada pensyarah dipra-daftar.</p>';
 }
 async function refreshAdmin() {
   await loadAdminDashboard();
@@ -1067,6 +1228,23 @@ $('#assignRoleForm').addEventListener('submit',async e=>{
   $('#assignRoleMessage').textContent='Mengemaskini peranan...';
   try{const r=await api('adminAssignClassRole',data);$('#assignRoleMessage').textContent=r.message;e.target.reset();await refreshAdmin();renderSelectedAdminClass();}
   catch(err){$('#assignRoleMessage').textContent=err.message;}
+});
+$('#registerLecturerForm')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(!selectedAdminClassId)return;
+  const message=$('#lecturerRegistrationMessage');
+  message.textContent='Mendaftarkan pensyarah...';
+  try{
+    const result=await api('adminRegisterLecturer',{
+      classId:selectedAdminClassId,
+      fullName:$('#lecturerFullName').value.trim(),
+      email:$('#lecturerEmail').value.trim()
+    });
+    e.target.reset();
+    message.textContent=result.message;
+    await refreshAdmin();
+    renderSelectedAdminClass();
+  }catch(error){message.textContent=error.message;}
 });
 document.querySelectorAll('[data-admin-tab]').forEach(btn=>{
   btn.addEventListener('click',()=>{
@@ -1332,8 +1510,10 @@ function renderRoleLabWorkspace() {
   $('#welcomeEmail').textContent=activeRoleTest.testUser.email;
   const semester=semesters.find(x=>x.semester_id===activeTestSemesterId)||semesters[0]||null;
   activeTestSemesterId=semester?.semester_id||null;
-  const ss=(ctx.semesterSubjects||[]).filter(x=>!semester || x.semester_id===semester.semester_id);
-  const subjectIds=ss.map(x=>x.subject_id);
+  const availableOffers=(ctx.semesterSubjects||[]).filter(x=>!semester || x.semester_id===semester.semester_id);
+  const selectedOfferIds=new Set(ctx.selectedSemesterSubjectIds||[]);
+  const ss=role==='student'?availableOffers.filter(x=>selectedOfferIds.has(x.semester_subject_id)):availableOffers;
+  const subjectIds=availableOffers.map(x=>x.subject_id);
   const subjects=(ctx.subjects||[]).filter(x=>subjectIds.includes(x.subject_id));
   const ssIds=ss.map(x=>x.semester_subject_id);
   const sessions=(ctx.sessions||[]).filter(x=>ssIds.includes(x.semester_subject_id) && x.status!=='cancelled');
@@ -1344,6 +1524,26 @@ function renderRoleLabWorkspace() {
   const membersById=Object.fromEntries(members.map(member=>[member.userId,member]));
   const mappedStaffName=userId=>membersById[userId]?.name||userId||'Belum ditetapkan';
   const subjectsById=Object.fromEntries(subjects.map(x=>[x.subject_id,x]));
+  const offeringPanel=$('#roleLabStudentOfferings');
+  if(offeringPanel) {
+    show('#roleLabStudentOfferings',role==='student');
+    if(role==='student') {
+      const groups=new Map();
+      availableOffers.forEach(offer=>{
+        if(!groups.has(offer.subject_id)) groups.set(offer.subject_id,{subject:subjectsById[offer.subject_id]||{},offers:[]});
+        groups.get(offer.subject_id).offers.push(offer);
+      });
+      offeringPanel.innerHTML=`<div class="section-heading"><div><h3>Pilih tawaran subjek</h3><p class="muted small">Pilihan ujian ini hanya untuk akaun sementara.</p></div></div>
+        <div class="student-offering-list">${Array.from(groups.entries()).map(([subjectId,group])=>{
+          const chosen=(ctx.selectedSemesterSubjectIds||[]).find(id=>group.offers.some(offer=>offer.semester_subject_id===id))||'';
+          const label=[group.subject.subject_code,group.subject.subject_name].filter(Boolean).join(' · ');
+          return `<div class="student-offering-row"><div><strong>${escapeHtml(label||subjectId)}</strong></div>
+            <select data-role-student-offering="${escapeHtml(subjectId)}"><option value="">Belum pilih</option>
+              ${group.offers.map(offer=>`<option value="${escapeHtml(offer.semester_subject_id)}" ${chosen===offer.semester_subject_id?'selected':''}>${escapeHtml([offer.offering_name||'Tawaran',mappedStaffName(offer.lecturer_user_id)].join(' · '))}</option>`).join('')}
+            </select><button class="btn btn-light btn-small" type="button" data-save-role-student-offering="${escapeHtml(subjectId)}">Simpan</button></div>`;
+        }).join('')||'<p class="muted">Tiada tawaran tersedia untuk semester ini.</p>'}</div>`;
+    }
+  }
   const calendarSubjects=Object.fromEntries(ss.map(link=>{
     const subject=subjectsById[link.subject_id]||{};
     return [link.semester_subject_id,{subjectName:`${subject.subject_code||''} ${subject.subject_name||'Subjek'}`.trim(),subjectColor:link.subject_color||''}];
@@ -1721,6 +1921,22 @@ $('#eventForm')?.addEventListener('submit',async e=>{
 $('#roleLabNav')?.addEventListener('click',e=>{
   const tab=e.target.closest('[data-role-tab]'); if(!tab) return;
   activeRoleLabTab=tab.dataset.roleTab; renderRoleLabWorkspace();
+});
+$('#roleLabStudentOfferings')?.addEventListener('click',async e=>{
+  const button=e.target.closest('[data-save-role-student-offering]');
+  if(!button||!activeRoleTest) return;
+  const subjectId=button.dataset.saveRoleStudentOffering;
+  const select=$(`[data-role-student-offering="${CSS.escape(subjectId)}"]`);
+  button.disabled=true;
+  try {
+    const result=await api('selectStudentSubjectOffering',{
+      semesterId:activeTestSemesterId,subjectId,semesterSubjectId:select?.value||''
+    },activeRoleTest.token);
+    await loadRoleTestContext();
+    showToast(result.message||'Pilihan ujian disimpan.');
+  } catch(error) {
+    showToast('Gagal menyimpan pilihan ujian: '+error.message,'error');
+  } finally { button.disabled=false; }
 });
 $('#roleLabContent')?.addEventListener('input',e=>{
   const isRoleSearch=e.target.id==='roleLabSearch';

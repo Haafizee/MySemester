@@ -1364,6 +1364,72 @@ tr:hover td {
     --header-h: 56px;
   }
 
+  .subject-offering-form {
+    margin: 14px 0;
+    padding: 14px;
+    border: 1px solid var(--border-color, #dce3eb);
+    border-radius: 12px;
+    background: var(--surface-muted, #f8fafc);
+  }
+  .subject-offering-form > summary {
+    cursor: pointer;
+    font-weight: 650;
+  }
+  .student-offering-selection {
+    margin-bottom: 18px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border-color, #dce3eb);
+  }
+  .student-offering-list {
+    display: grid;
+    gap: 8px;
+  }
+  .student-offering-row,
+  .lecturer-directory-row {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) minmax(180px, 1.3fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color, #dce3eb);
+    border-radius: 10px;
+    background: var(--surface, #fff);
+  }
+  .student-offering-row > div,
+  .lecturer-directory-row > div {
+    display: grid;
+    gap: 3px;
+  }
+  .student-offering-row small,
+  .lecturer-directory-row small {
+    color: var(--text-muted, #64748b);
+  }
+  .student-offering-row select {
+    min-width: 0;
+    width: 100%;
+  }
+  .lecturer-registration {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color, #dce3eb);
+  }
+  .lecturer-directory-list {
+    display: grid;
+    gap: 7px;
+    margin-top: 12px;
+  }
+  .lecturer-directory-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  @media (max-width: 640px) {
+    .student-offering-row {
+      grid-template-columns: 1fr auto;
+    }
+    .student-offering-row > div {
+      grid-column: 1 / -1;
+    }
+  }
+
   .app-header {
     padding: 0 12px;
   }

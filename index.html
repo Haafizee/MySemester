@@ -489,13 +489,25 @@
                 </form>
                 <form id="assignRoleForm" class="form-stack compact-form">
                   <h3>Berikan peranan kelas</h3>
+                  <p class="muted small">Gunakan untuk akaun sedia ada. Pensyarah yang belum log masuk perlu didaftarkan melalui borang pra-daftar.</p>
                   <label>Emel Google pengguna <input id="assignEmail" type="email" required placeholder="nama@gmail.com"></label>
                   <label>Peranan
-                    <select id="assignRole"><option value="ko">Class Coordinator (KO)</option><option value="pic">PIC</option><option value="lecturer">Pensyarah</option><option value="student">Pelajar</option><option value="admin">Pentadbir kelas</option></select>
+                    <select id="assignRole"><option value="ko">Class Coordinator (KO)</option><option value="pic">PIC</option><option value="lecturer">Pensyarah (akaun sedia ada)</option><option value="student">Pelajar</option><option value="admin">Pentadbir kelas</option></select>
                   </label>
                   <button class="btn btn-light" type="submit">Tetapkan peranan</button>
                   <div id="assignRoleMessage" class="small form-message"></div>
                 </form>
+                <section class="lecturer-registration">
+                  <h3>Pra-daftar pensyarah</h3>
+                  <p class="muted small">Daftarkan nama dan emel Google dahulu. Pensyarah melengkapkan pautan apabila log masuk menggunakan emel tersebut.</p>
+                  <form id="registerLecturerForm" class="form-stack compact-form">
+                    <label>Nama pensyarah<input id="lecturerFullName" required autocomplete="name"></label>
+                    <label>Emel Google<input id="lecturerEmail" type="email" required autocomplete="email"></label>
+                    <button class="btn btn-light" type="submit">Daftar pensyarah</button>
+                    <div id="lecturerRegistrationMessage" class="small form-message" aria-live="polite"></div>
+                  </form>
+                  <div id="lecturerDirectoryList" class="lecturer-directory-list"></div>
+                </section>
               </div>
             </div>
           </section>
@@ -504,7 +516,7 @@
         <section id="panel-subjects" class="app-panel hidden">
           <div class="panel">
             <div class="section-heading">
-              <div><h2>Tetapan Subjek, PIC &amp; Pensyarah</h2><p class="muted">KO atau Pentadbir kelas menetapkan PIC dan pensyarah bagi setiap subjek. Pelajar hanya melihat subjek yang mempunyai kedua-dua penetapan serta jadual aktif.</p></div>
+              <div><h2>Tetapan Subjek, PIC &amp; Pensyarah</h2><p class="muted">KO, Pentadbir kelas atau pensyarah boleh membina tawaran subjek. Pelajar memilih kumpulan dan pensyarah untuk akaun mereka sendiri selepas jadual tersedia.</p></div>
               <label>Semester <select id="subjectConfigSemester"></select></label>
             </div>
             <div id="subjectConfigContext" class="subject-config-context"></div>
@@ -513,6 +525,28 @@
               <label>Tambah subjek sedia ada<select id="subjectLinkSubject" required></select></label>
               <button class="btn btn-light" type="submit">Pautkan kepada semester</button>
             </form>
+            <details id="subjectOfferingForm" class="subject-offering-form">
+              <summary>Tambah tawaran subjek / kumpulan</summary>
+              <form class="form-stack compact-form" style="margin-top:12px">
+                <label>Subjek katalog
+                  <select id="subjectOfferingSubject"><option value="">Tambah subjek baharu...</option></select>
+                </label>
+                <div id="newSubjectFields" class="two-fields">
+                  <label>Kod subjek<input id="newSubjectCode" placeholder="Contoh: RBTS7012"></label>
+                  <label>Nama subjek<input id="newSubjectName" placeholder="Contoh: Pedagogi Digital"></label>
+                </div>
+                <div class="two-fields">
+                  <label>Nama tawaran / kumpulan<input id="subjectOfferingName" required placeholder="Contoh: Kumpulan A"></label>
+                  <label>Kredit<input id="newSubjectCredit" type="number" min="0" max="10" value="3"></label>
+                </div>
+                <label>Pensyarah
+                  <select id="subjectOfferingLecturer" required></select>
+                  <small class="muted">Pensyarah hanya boleh mewujudkan tawaran untuk dirinya sendiri.</small>
+                </label>
+                <label>PIC subjek<select id="subjectOfferingPic" required></select></label>
+                <button class="btn" type="submit">Simpan tawaran</button>
+              </form>
+            </details>
             <div class="subject-config-toolbar">
               <label for="subjectConfigSearch">Cari pemetaan</label>
               <input id="subjectConfigSearch" type="search" placeholder="Cari subjek, pensyarah atau PIC">
@@ -527,6 +561,7 @@
              ============================================================= -->
         <section id="panel-schedule" class="app-panel hidden">
           <div class="panel">
+            <div id="studentOfferingSelection" class="student-offering-selection hidden"></div>
             <div class="section-heading">
               <div><h2>Jadual Kuliah &amp; Sesi Pembelajaran</h2><p class="muted">Senarai sesi mengikut waktu dan lokasi.</p></div>
               <button id="scheduleAddBtn" class="btn btn-sm btn-primary" type="button" onclick="$('#sessionFormWrap').toggleAttribute('open')">➕ Tambah sesi</button>
@@ -642,6 +677,7 @@
               </div>
             </details>
             <div id="roleLabStats" class="role-lab-stats"></div>
+            <div id="roleLabStudentOfferings" class="student-offering-selection hidden"></div>
             <nav id="roleLabNav" class="role-lab-nav" aria-label="Menu ruang kerja peranan"></nav>
             <div id="roleLabContent" class="role-lab-content"></div>
             <section class="role-lab-card role-lab-audit-panel">
@@ -747,7 +783,7 @@
               <label>Jadual database
                 <select id="adminDataTable">
                   <option>Users</option><option>UserRoles</option><option>Classes</option><option>ClassMembers</option>
-                  <option>ClassInvitations</option><option>Semesters</option><option>Subjects</option><option>SemesterSubjects</option>
+                  <option>ClassInvitations</option><option>LecturerDirectory</option><option>Semesters</option><option>Subjects</option><option>SemesterSubjects</option><option>StudentSemesterSubjects</option>
                   <option>ScheduleSeries</option><option>ClassSessions</option><option>ScheduleChangeRequests</option>
                   <option>ScheduleHistory</option><option>Assignments</option><option>AssignmentResources</option>
                   <option>AssignmentHistory</option><option>StudentAssignmentProgress</option><option>AssignmentChecklists</option>
@@ -792,7 +828,9 @@
               <li><strong>Tambah 3 hingga 15 semester:</strong> Susun struktur tempoh akademik.</li>
               <li><strong>Aktifkan kelas:</strong> Kelas boleh diaktifkan selepas sekurang-kurangnya tiga semester direkodkan.</li>
               <li><strong>Jana kod jemputan:</strong> Salin kod untuk diedarkan kepada pelajar bagi kemasukan kelas pantas.</li>
-              <li><strong>Tetapkan KO, PIC dan Pensyarah:</strong> Berikan peranan khusus mengikut subjek dan kelas.</li>
+              <li><strong>Pra-daftar pensyarah:</strong> Simpan nama dan emel Google; pautan akaun dibuat apabila pensyarah log masuk.</li>
+              <li><strong>Cipta tawaran dan jadual subjek:</strong> KO/Class Admin atau pensyarah tetapkan kumpulan, pensyarah dan PIC sebelum menyediakan jadual.</li>
+              <li><strong>Pilihan pelajar:</strong> Setiap pelajar pilih tawaran bagi setiap subjek; jadual dan bahan dipaparkan mengikut pilihan individu.</li>
               <li><strong>Matriks Kebenaran &amp; Sandbox:</strong> Gunakan tab Makmal Peranan untuk menguji simulasi pelajar atau pensyarah.</li>
             </ol>
             <p class="muted small">Jika anda mengedit Google Sheets secara manual, tekan butang <b>🧹 Kosongkan cache</b> di bahagian atas supaya perubahan dikemaskini serta-merta.</p>

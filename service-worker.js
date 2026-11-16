@@ -1,4 +1,4 @@
-const CACHE='mysemester-admin-v7';
+const CACHE='mysemester-admin-v8';
 const ASSETS=['./','./index.html','./config.js','./assets/style.css','./assets/app.js','./manifest.json'];
 self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));});
 self.addEventListener('activate',e=>e.waitUntil(

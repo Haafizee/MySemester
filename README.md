@@ -1,19 +1,20 @@
 # MySemester
 
-## Subject setup and student visibility
+## Aliran pensyarah, tawaran subjek dan pilihan pelajar
 
-KO or a Class Admin can link a catalog subject to a semester and assign an active lecturer and PIC in **Tetapan Subjek**. The semester-subject link is stored in `SemesterSubjects` (`lecturer_user_id` and `pic_user_id`); schedules, PB and learning resources reference its `semester_subject_id`.
+1. System Admin mendaftarkan nama dan emel Google pensyarah dalam Pengurusan Kelas. Akaun Google yang aktif dipautkan serta-merta; jika belum pernah log masuk, ia kekal berstatus `pending` sehingga pemilik emel yang disahkan log masuk. Tiada emel jemputan dihantar oleh sistem.
+2. KO, Class Admin atau pensyarah mencipta tawaran subjek untuk semester. Tawaran merangkumi subjek katalog (atau subjek baharu), nama kumpulan, pensyarah dan PIC. Pensyarah hanya boleh mencipta tawaran untuk dirinya sendiri; server menguatkuasakan skop kelas dan peranan.
+3. Pensyarah/pegawai yang diberi kebenaran menambah sesi jadual kepada tawaran tersebut. Tawaran hanya boleh dipilih pelajar selepas pensyarah dan PIC aktif ditetapkan serta jadual aktif tersedia.
+4. Setiap pelajar memilih satu tawaran bagi setiap subjek. Pilihan disimpan berasingan bagi setiap pelajar dan tidak mengubah jadual rakan sekelas. Jadual, PB, sumber dan acara subjek pelajar ditapis kepada tawaran yang dipilih; acara umum kelas kekal kelihatan.
 
-Students see a subject only after the mapping is active, both assigned staff are active class members with the matching roles, and the subject has an active class session or recurring schedule. Student dashboards list published PB only. PB instructions and supporting materials are linked through `AssignmentResources`.
+`LecturerDirectory` menyimpan pra-pendaftaran pensyarah berkelas. `SemesterSubjects` mewakili tawaran semester-subjek yang boleh mempunyai berbilang kumpulan/pensyarah, dengan `offering_name`, `lecturer_user_id` dan `pic_user_id`. `StudentSemesterSubjects` menyimpan pilihan individu menggunakan kunci logik pelajar + semester + subjek. Apps Script menambah helaian dan kolum yang diperlukan secara idempotent apabila API digunakan.
 
-PB, learning resources, and calendar events are grouped by subject in collapsible sections that start closed. Each list provides a compact subject filter and search.
+## Hubungan data kanonik
 
-PICs can view and manage only their assigned subjects. Lecturers can view and manage only their assigned subjects that have an active schedule. KO and Class Admin can manage subject staffing and class-wide schedules.
+Laluan kanonik ialah `Classes.class_id` → `Semesters.class_id` → `SemesterSubjects.semester_id` → `Subjects.subject_id`. Tawaran subjek merujuk `Users.user_id` bagi pensyarah dan PIC; kedua-duanya mesti ahli aktif kelas dengan peranan yang sepadan. Pelajar memilih `semester_subject_id` melalui `StudentSemesterSubjects`; sesi jadual, PB, sumber dan acara subjek terus merujuk tawaran yang sama.
 
-## Class, subject, and lecturer relationships
+Jangan tambah jadual pemetaan kelas-subjek kedua atau salin `class_id` ke `SemesterSubjects`; semester menentukan kelas dan mengelakkan pemetaan yang bercanggah. Helaian `DataModel` menerangkan kunci dan peraturan integriti. Pelajar hanya menerima PB terbitan; bahan PB menggunakan pautan `AssignmentResources`.
 
-The canonical path is `Classes.class_id` → `Semesters.class_id` → `SemesterSubjects.semester_id` → `Subjects.subject_id`. `SemesterSubjects` is the semester-specific assignment bridge: its `lecturer_user_id` and `pic_user_id` reference `Users.user_id`, and each assigned staff member must also be an active `ClassMembers` entry for the same class with the matching role. Schedules, PB, and resources reference `semester_subject_id`, so they inherit the class, semester, and subject mapping without duplicating those IDs.
+PB, sumber pembelajaran dan acara kalendar dikumpulkan mengikut subjek dalam panel boleh sorok yang tertutup secara lalai, dengan carian dan penapis ringkas. PIC dan pensyarah dihadkan kepada pemetaan yang ditugaskan kepada mereka.
 
-Do not add a second class-subject or lecturer-subject mapping table, or copy `class_id` onto `SemesterSubjects`; either would duplicate the canonical relationship and allow assignments to disagree with their semester. The workbook's `DataModel` sheet documents these keys and validation rules.
-
-The Apps Script backend adds `pic_user_id` to existing `SemesterSubjects` sheets when the API is next used. Upload [MySemester_DB.xlsx](./MySemester_DB.xlsx) to Google Drive and set the spreadsheet ID in Apps Script before deploying.
+Muat naik [MySemester_DB.xlsx](./MySemester_DB.xlsx) ke Google Drive dan tetapkan ID spreadsheet dalam Script Properties sebelum deploy Apps Script. Aliran OAuth sebenar serta perubahan Google Sheets perlu disahkan selepas deployment.
