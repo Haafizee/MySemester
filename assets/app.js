@@ -413,11 +413,17 @@ function renderSubjectAssignmentPanel() {
   const semesters=currentClass?.semesters||[];
   const previous=semesterSelect.value;
   semesterSelect.innerHTML=semesters.map(s=>`<option value="${escapeHtml(s.semesterId)}">${escapeHtml(s.semesterName)}</option>`).join('');
-  const defaultSemester=$('#filterSemesterSelect')?.value||semesters.find(s=>s.status==='active')?.semesterId||semesters[0]?.semesterId||'';
+  const filterSemesterId=$('#filterSemesterSelect')?.value;
+  const defaultSemester=semesters.find(s=>s.semesterId===filterSemesterId)?.semesterId||
+    semesters.find(s=>s.status==='active')?.semesterId||semesters[0]?.semesterId||'';
   semesterSelect.value=semesters.some(s=>s.semesterId===previous)?previous:defaultSemester;
+  const semester=semesters.find(s=>s.semesterId===semesterSelect.value);
   const links=(currentClass?.semesterSubjects||[]).filter(s=>s.semesterId===semesterSelect.value);
   const linkedSubjectIds=new Set(links.map(link=>link.subjectId));
   const available=(currentClass?.availableSubjects||[]).filter(subject=>!linkedSubjectIds.has(subject.subject_id));
+  const classLabel=[currentClass?.className,currentClass?.classCode].filter(Boolean).join(' · ')||'Kelas';
+  const sessionLabel=semester?.academicSession?` · Sesi ${escapeHtml(semester.academicSession)}`:'';
+  $('#subjectConfigContext').innerHTML=`<span class="subject-config-context-label">Struktur pemetaan</span><strong>${escapeHtml(classLabel)}</strong><span>›</span><strong>${escapeHtml(semester?.semesterName||'Pilih semester')}${sessionLabel}</strong><span>›</span><span>Subjek · Pensyarah · PIC</span>`;
   const subjectLinkSelect=$('#subjectLinkSubject');
   if(subjectLinkSelect) {
     subjectLinkSelect.innerHTML=available.map(subject=>
@@ -431,19 +437,38 @@ function renderSubjectAssignmentPanel() {
   const scheduledIds=new Set([...(workspaceData?.schedules||[]),...(workspaceData?.scheduleSeries||[])]
     .filter(x=>!['cancelled','archived'].includes(String(x.status||'').toLowerCase()))
     .map(x=>x.semester_subject_id));
+  const staffById=Object.fromEntries(members.map(member=>[member.userId,member]));
+  const staffName=userId=>staffById[userId]?.name||userId||'Belum ditetapkan';
+  const readyCount=links.filter(link=>link.lecturerUserId&&link.picUserId&&scheduledIds.has(link.semesterSubjectId)).length;
+  $('#subjectConfigStats').innerHTML=[
+    ['Pemetaan subjek',links.length],
+    ['Pensyarah ditetapkan',links.filter(link=>link.lecturerUserId).length],
+    ['PIC ditetapkan',links.filter(link=>link.picUserId).length],
+    ['Sedia untuk pelajar',readyCount]
+  ].map(([label,count])=>`<article class="subject-config-stat"><span>${label}</span><strong>${count}<small> / ${links.length}</small></strong></article>`).join('');
   const staffOptions=(role,selected)=>`<option value="">Belum ditetapkan</option>`+members
     .filter(member=>String(member.role||'').toLowerCase()===role)
     .map(member=>`<option value="${escapeHtml(member.userId)}" ${member.userId===selected?'selected':''}>${escapeHtml(member.name||member.userId)}</option>`).join('');
-  $('#subjectConfigRows').innerHTML=links.map(link=>{
+  const query=($('#subjectConfigSearch')?.value||'').trim().toLowerCase();
+  const filteredLinks=links.filter(link=>[
+    link.subjectCode,link.subjectName,staffName(link.lecturerUserId),staffName(link.picUserId)
+  ].join(' ').toLowerCase().includes(query));
+  $('#subjectConfigRows').innerHTML=filteredLinks.map(link=>{
     const complete=!!link.lecturerUserId&&!!link.picUserId&&scheduledIds.has(link.semesterSubjectId);
-    return `<tr>
-      <td><strong>${escapeHtml(link.subjectCode||'')}</strong><small>${escapeHtml(link.subjectName||'')}</small></td>
-      <td><select data-subject-staff="lecturerUserId" data-semester-subject="${escapeHtml(link.semesterSubjectId)}" aria-label="Pensyarah ${escapeHtml(link.subjectCode)}">${staffOptions('lecturer',link.lecturerUserId)}</select></td>
-      <td><select data-subject-staff="picUserId" data-semester-subject="${escapeHtml(link.semesterSubjectId)}" aria-label="PIC ${escapeHtml(link.subjectCode)}">${staffOptions('pic',link.picUserId)}</select></td>
-      <td><span class="status ${complete?'active':'draft'}">${complete?'Sedia dipaparkan':'Belum lengkap'}</span>${!scheduledIds.has(link.semesterSubjectId)?'<small>Jadual belum ditetapkan</small>':''}</td>
-      <td><button type="button" class="btn btn-light btn-small" data-save-subject-staff="${escapeHtml(link.semesterSubjectId)}">Simpan</button></td>
-    </tr>`;
-  }).join('')||'<tr><td colspan="5" class="muted">Tiada subjek dipautkan kepada semester ini. Tambahkan pemetaan subjek melalui pentadbiran data.</td></tr>';
+    const subjectLabel=[link.subjectCode,link.subjectName].filter(Boolean).join(' · ');
+    return `<article class="subject-mapping-card">
+      <header class="subject-mapping-card-head">
+        <div><span class="subject-mapping-code">${escapeHtml(link.subjectCode||'SUBJEK')}</span><h3>${escapeHtml(link.subjectName||'Subjek')}</h3></div>
+        <span class="status ${complete?'active':'draft'}">${complete?'Sedia untuk pelajar':'Belum lengkap'}</span>
+      </header>
+      <p class="subject-mapping-trail"><span>${escapeHtml(currentClass?.className||'Kelas')}</span><span>›</span><span>${escapeHtml(semester?.semesterName||'Semester')}</span><span>›</span><span>${escapeHtml(link.subjectCode||'Subjek')}</span></p>
+      <div class="subject-mapping-staff">
+        <label><span>Pensyarah</span><select data-subject-staff="lecturerUserId" data-semester-subject="${escapeHtml(link.semesterSubjectId)}" aria-label="Pensyarah ${escapeHtml(subjectLabel)}">${staffOptions('lecturer',link.lecturerUserId)}</select><small>${escapeHtml(staffName(link.lecturerUserId))}</small></label>
+        <label><span>PIC subjek</span><select data-subject-staff="picUserId" data-semester-subject="${escapeHtml(link.semesterSubjectId)}" aria-label="PIC ${escapeHtml(subjectLabel)}">${staffOptions('pic',link.picUserId)}</select><small>${escapeHtml(staffName(link.picUserId))}</small></label>
+      </div>
+      <footer class="subject-mapping-card-foot"><span>${scheduledIds.has(link.semesterSubjectId)?'Jadual aktif tersedia':'Jadual belum ditetapkan'}</span><button type="button" class="btn btn-light btn-small" data-save-subject-staff="${escapeHtml(link.semesterSubjectId)}">Simpan pemetaan</button></footer>
+    </article>`;
+  }).join('')||(query?'<p class="muted">Tiada pemetaan sepadan dengan carian.</p>':'<p class="muted">Tiada subjek dipautkan kepada semester ini. Tambahkan subjek untuk membina pemetaan kelas.</p>');
 }
 function renderStudentWorkspace(errorMessage='') {
   const data=workspaceData||{};
@@ -599,7 +624,14 @@ $('#filterSemesterSelect')?.addEventListener('change',()=>{
   if($('#subjectConfigSemester')) $('#subjectConfigSemester').value=$('#filterSemesterSelect').value;
   loadStudentWorkspace();
 });
-$('#subjectConfigSemester')?.addEventListener('change',renderSubjectAssignmentPanel);
+$('#subjectConfigSemester')?.addEventListener('change',()=>{
+  const semesterFilter=$('#filterSemesterSelect');
+  if(semesterFilter&&semesterFilter.value!==$('#subjectConfigSemester').value) {
+    semesterFilter.value=$('#subjectConfigSemester').value;
+    loadStudentWorkspace();
+  } else renderSubjectAssignmentPanel();
+});
+$('#subjectConfigSearch')?.addEventListener('input',renderSubjectAssignmentPanel);
 $('#subjectLinkForm')?.addEventListener('submit',async e=>{
   e.preventDefault();
   const semesterId=$('#subjectConfigSemester').value,subjectId=$('#subjectLinkSubject').value;
@@ -1259,6 +1291,8 @@ function renderRoleLabWorkspace() {
   const resources=(ctx.resources||[]).filter(x=>ssIds.includes(x.semester_subject_id) && x.visibility!=='personal' && x.visibility!=='archived');
   const events=(ctx.calendarEvents||[]).filter(x=>!semester || x.semester_id===semester.semester_id).filter(x=>x.visibility!=='archived');
   const members=ctx.members||[], ownProgress=ctx.ownProgress||[];
+  const membersById=Object.fromEntries(members.map(member=>[member.userId,member]));
+  const mappedStaffName=userId=>membersById[userId]?.name||userId||'Belum ditetapkan';
   const subjectsById=Object.fromEntries(subjects.map(x=>[x.subject_id,x]));
   const calendarSubjects=Object.fromEntries(ss.map(link=>{
     const subject=subjectsById[link.subject_id]||{};
@@ -1295,7 +1329,7 @@ function renderRoleLabWorkspace() {
     .filter(x=>x.date).sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(0,5);
   const searchRecord=record=>[...Object.values(record),roleLabSubjectName(record.semester_subject_id)].join(' ');
   const listRecords={
-    dashboard:roleLabPaginate('dashboard',ss,record=>{const subject=subjectsById[record.subject_id]||{};return [subject.subject_code,subject.subject_name,record.lecturer_user_id].join(' ');}),
+    dashboard:roleLabPaginate('dashboard',ss,record=>{const subject=subjectsById[record.subject_id]||{};return [subject.subject_code,subject.subject_name,mappedStaffName(record.lecturer_user_id),mappedStaffName(record.pic_user_id)].join(' ');}),
     schedule:roleLabPaginate('schedule',sessions,searchRecord),
     assignments:roleLabPaginate('assignments',assignments,searchRecord,record=>record.assignment_type||'PB','Jenis'),
     resources:roleLabPaginate('resources',resources,record=>`${searchRecord(record)} ${roleLabSubjectName(record.semester_subject_id)}`,record=>roleLabSubjectName(record.semester_subject_id),'Subjek'),
@@ -1315,15 +1349,15 @@ function renderRoleLabWorkspace() {
       (ctx.scheduleSeries||[]).some(item=>item.semester_subject_id===x.semester_subject_id&&item.status!=='cancelled');
     const ready=!!x.lecturer_user_id&&!!x.pic_user_id&&scheduleReady;
     return `<tr><td>${escapeHtml(sub.subject_code||'—')}</td><td>${escapeHtml(sub.subject_name||'Subjek')}</td>
-      <td>${assignStaff?`<select data-subject-staff="lecturerUserId" data-semester-subject="${escapeHtml(x.semester_subject_id)}" aria-label="Pensyarah">${staffOptions('lecturer',x.lecturer_user_id)}</select>`:escapeHtml(x.lecturer_user_id||'—')}</td>
-      <td>${assignStaff?`<select data-subject-staff="picUserId" data-semester-subject="${escapeHtml(x.semester_subject_id)}" aria-label="PIC">${staffOptions('pic',x.pic_user_id)}</select>`:escapeHtml(x.pic_user_id||'—')}</td>
+      <td>${assignStaff?`<select data-subject-staff="lecturerUserId" data-semester-subject="${escapeHtml(x.semester_subject_id)}" aria-label="Pensyarah">${staffOptions('lecturer',x.lecturer_user_id)}</select>`:escapeHtml(mappedStaffName(x.lecturer_user_id))}</td>
+      <td>${assignStaff?`<select data-subject-staff="picUserId" data-semester-subject="${escapeHtml(x.semester_subject_id)}" aria-label="PIC">${staffOptions('pic',x.pic_user_id)}</select>`:escapeHtml(mappedStaffName(x.pic_user_id))}</td>
       <td>${assignments.filter(a=>a.semester_subject_id===x.semester_subject_id).length}</td>
       <td><span class="status ${ready?'active':'draft'}">${ready?'Sedia':'Belum lengkap'}</span></td>
       ${assignStaff?`<td><button class="btn btn-light btn-small" data-role-action="save-subject-staff" data-id="${escapeHtml(x.semester_subject_id)}">Simpan</button></td>`:''}</tr>`;
   }).join('')||`<tr><td colspan="${assignStaff?7:6}">${escapeHtml(listRecords.dashboard.empty)}</td></tr>`;
   if(activeRoleLabTab==='dashboard') {
     content=`${header}<div class="role-lab-grid">
-      <section class="role-lab-card role-lab-wide"><div class="role-lab-card-head"><h3>Subjek semester</h3><span class="muted small">${ss.length} subjek</span></div>${assignStaff?`<p class="muted small">Tetapkan staf dan jadual bagi setiap subjek. PB, nota dan sumber pelajar hanya dipaparkan apabila pemetaan lengkap.</p><form id="roleLabSubjectLinkForm" class="role-lab-form"><label>Tambah subjek sedia ada<select name="subjectId" required>${(ctx.availableSubjects||[]).filter(subject=>!ss.some(link=>link.subject_id===subject.subject_id)).map(subject=>`<option value="${escapeHtml(subject.subject_id)}">${escapeHtml([subject.subject_code,subject.subject_name].filter(Boolean).join(' · '))}</option>`).join('')||'<option value="">Tiada subjek tersedia untuk dipautkan</option>'}</select></label><button class="btn btn-light" type="submit" ${(ctx.availableSubjects||[]).every(subject=>ss.some(link=>link.subject_id===subject.subject_id))?'disabled':''}>Pautkan kepada semester</button></form>`:''}<div class="table-wrap role-lab-table-wrap"><table><thead><tr><th>Kod</th><th>Subjek</th><th>Pensyarah</th><th>PIC</th><th>PB</th><th>Status pelajar</th>${assignStaff?'<th></th>':''}</tr></thead><tbody>${subjectTable}</tbody></table></div>${listRecords.dashboard.pagination}</section>
+      <section class="role-lab-card role-lab-wide"><div class="role-lab-card-head"><div><h3>Pemetaan kelas → subjek → pensyarah</h3><p class="muted small">${escapeHtml(currentClass?.className||'Kelas aktif')} · ${escapeHtml(semester?.semesterName||'Semester')}</p></div><span class="muted small">${ss.length} subjek</span></div>${assignStaff?`<p class="muted small">Tetapkan pensyarah dan PIC untuk setiap subjek semester. PB, nota dan sumber hanya tersedia kepada pelajar selepas pemetaan staf dan jadual lengkap.</p><form id="roleLabSubjectLinkForm" class="role-lab-form"><label>Tambah subjek sedia ada<select name="subjectId" required>${(ctx.availableSubjects||[]).filter(subject=>!ss.some(link=>link.subject_id===subject.subject_id)).map(subject=>`<option value="${escapeHtml(subject.subject_id)}">${escapeHtml([subject.subject_code,subject.subject_name].filter(Boolean).join(' · '))}</option>`).join('')||'<option value="">Tiada subjek tersedia untuk dipautkan</option>'}</select></label><button class="btn btn-light" type="submit" ${(ctx.availableSubjects||[]).every(subject=>ss.some(link=>link.subject_id===subject.subject_id))?'disabled':''}>Pautkan kepada semester</button></form>`:''}<div class="table-wrap role-lab-table-wrap"><table><thead><tr><th>Kod</th><th>Subjek</th><th>Pensyarah</th><th>PIC subjek</th><th>PB</th><th>Status pelajar</th>${assignStaff?'<th></th>':''}</tr></thead><tbody>${subjectTable}</tbody></table></div>${listRecords.dashboard.pagination}</section>
       <section class="role-lab-card"><h3>Tarikh penting seterusnya</h3>${upcoming.map(x=>`<div class="role-lab-list-row"><div><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.type)}</small></div><time>${escapeHtml(x.date)}</time></div>`).join('')||'<p class="muted small">Tiada tarikh akan datang direkodkan.</p>'}</section>
       <section class="role-lab-card"><h3>Status ruang kerja</h3><div class="role-lab-summary"><span>Peranan aktif</span><b>${escapeHtml(roleLabRoleLabel(role))}</b></div><div class="role-lab-summary"><span>PB aktif</span><b>${assignments.length}</b></div><div class="role-lab-summary"><span>Ahli kelas</span><b>${members.length}</b></div><p class="muted small">Data kelas dipaparkan bersama perubahan sandbox sesi ini.</p></section>
       ${roleLabAllowed('semester.manage')?`<section class="role-lab-card"><h3>Tambah semester</h3><form id="roleLabSemesterForm" class="role-lab-form"><label>Nama semester<input name="semesterName" required placeholder="Contoh: Semester 2"></label><label>Sesi akademik<input name="academicSession" placeholder="2026/2027"></label><label>Nombor semester<input name="semesterNumber" type="number" min="1" max="15" value="${semesters.length+1}"></label><label>Tarikh mula<input name="startDate" type="date"></label><label>Tarikh tamat<input name="endDate" type="date"></label><div class="btn-row"><button class="btn" type="submit">Cipta semester</button><span class="small form-message" id="roleLabSemesterMessage"></span></div></form></section>`:''}

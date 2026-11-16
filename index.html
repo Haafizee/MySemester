@@ -507,13 +507,17 @@
               <div><h2>Tetapan Subjek, PIC &amp; Pensyarah</h2><p class="muted">KO atau Pentadbir kelas menetapkan PIC dan pensyarah bagi setiap subjek. Pelajar hanya melihat subjek yang mempunyai kedua-dua penetapan serta jadual aktif.</p></div>
               <label>Semester <select id="subjectConfigSemester"></select></label>
             </div>
+            <div id="subjectConfigContext" class="subject-config-context"></div>
+            <div id="subjectConfigStats" class="subject-config-stats"></div>
             <form id="subjectLinkForm" class="role-lab-form">
               <label>Tambah subjek sedia ada<select id="subjectLinkSubject" required></select></label>
               <button class="btn btn-light" type="submit">Pautkan kepada semester</button>
             </form>
-            <div class="table-wrap">
-              <table><thead><tr><th>Subjek</th><th>Pensyarah</th><th>PIC</th><th>Status dashboard pelajar</th><th></th></tr></thead><tbody id="subjectConfigRows"></tbody></table>
+            <div class="subject-config-toolbar">
+              <label for="subjectConfigSearch">Cari pemetaan</label>
+              <input id="subjectConfigSearch" type="search" placeholder="Cari subjek, pensyarah atau PIC">
             </div>
+            <div id="subjectConfigRows" class="subject-mapping-grid"></div>
             <p id="subjectConfigMessage" class="small form-message" aria-live="polite"></p>
           </div>
         </section>
