@@ -1,7 +1,14 @@
-console.log('MySemester app.js v1.3 (Development Mode + workspace performance) loaded');
+console.log('MySemester app.js v1.4 (Development Mode + high performance) loaded');
 let idToken = null;
 let devToken = null;
-const LOGIN_MODE = String((typeof MYSEMESTER_CONFIG !== 'undefined' && MYSEMESTER_CONFIG.LOGIN_MODE) || 'manual').toLowerCase();
+
+function getConfig() {
+  if (typeof window !== 'undefined' && window.MYSEMESTER_CONFIG) return window.MYSEMESTER_CONFIG;
+  if (typeof MYSEMESTER_CONFIG !== 'undefined') return MYSEMESTER_CONFIG;
+  return {};
+}
+
+const LOGIN_MODE = String(getConfig().LOGIN_MODE || 'manual').toLowerCase();
 let rolePreviewStarting = false;
 let currentUser = null;
 let authenticatedUser = null;
@@ -27,18 +34,29 @@ function escapeHtml(value) {
   }[c]));
 }
 
+let toastTimer = null;
+function showToast(message, type = 'ok', duration = 3500) {
+  const el = $('#toast');
+  if (!el) return;
+  el.textContent = message;
+  el.className = 'toast ' + (type === true ? 'error' : (type === false ? 'ok' : type));
+  show('#toast', true);
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { show('#toast', false); }, duration);
+}
+
 function initializeGoogleSignIn() {
   if (!window.google || !google.accounts || !google.accounts.id) {
     setError('Google Sign-In belum dimuatkan. Sila refresh halaman.');
     return;
   }
-  if (!MYSEMESTER_CONFIG.GOOGLE_CLIENT_ID ||
-      MYSEMESTER_CONFIG.GOOGLE_CLIENT_ID.includes('PASTE_')) {
+  const config = getConfig();
+  if (!config.GOOGLE_CLIENT_ID || config.GOOGLE_CLIENT_ID.includes('PASTE_')) {
     setError('Google Client ID belum dikonfigurasikan dalam config.js.');
     return;
   }
   google.accounts.id.initialize({
-    client_id: MYSEMESTER_CONFIG.GOOGLE_CLIENT_ID,
+    client_id: config.GOOGLE_CLIENT_ID,
     callback: onGoogleCredential,
     auto_select: false
   });
@@ -103,7 +121,11 @@ $('#manualLoginForm')?.addEventListener('submit',async e=>{
     const result=await api('devLogin',{username:$('#manualUsername').value.trim(),password:$('#manualPassword').value});
     devToken=result.devToken;
     $('#manualPassword').value='';
-    await completeLogin(await api('bootstrap',{}));
+    if (result.user && (result.isSystemAdmin || result.workspace === 'system_admin')) {
+      await completeLogin(result);
+    } else {
+      await completeLogin(await api('bootstrap',{}));
+    }
   } catch(error) {
     devToken=null;setError(error.message||'Log masuk pembangunan gagal.');
   } finally {
@@ -111,22 +133,43 @@ $('#manualLoginForm')?.addEventListener('submit',async e=>{
   }
 });
 
-function api(action,data,testSessionToken) {
+function api(action,data={},testSessionToken) {
   if(action!=='devLogin' && !idToken && !devToken) return Promise.reject(new Error('Sila log masuk terlebih dahulu.'));
-  const apiUrl=MYSEMESTER_CONFIG.APPS_SCRIPT_URL;
-  if(!apiUrl||!apiUrl.endsWith('/exec'))return Promise.reject(new Error('URL Apps Script tidak sah. Gunakan URL /exec.'));
+  const config=getConfig();
+  const apiUrl=config.APPS_SCRIPT_URL;
+  if(!apiUrl||!apiUrl.endsWith('/exec')) return Promise.reject(new Error('URL Apps Script tidak ditemui atau tidak sah dalam config.js. Pastikan menggunakan URL Web App (/exec).'));
   const requestId='r'+Date.now().toString(36)+Math.random().toString(36).slice(2,15);
-  const payload={action,data,idToken:idToken||'',devToken:devToken||'',requestId};
+  const payload={
+    action,
+    data:data||{},
+    idToken:idToken||'',
+    devToken:devToken||'',
+    requestId,
+    origin:(typeof window!=='undefined'&&window.location&&window.location.origin)?window.location.origin:''
+  };
   if(testSessionToken) payload.testSessionToken=testSessionToken;
-  const frame=document.getElementById('apiFrame');
 
   return new Promise((resolve,reject)=>{
     let finished=false;
     let timeoutId;
-    const cleanup=()=>{window.removeEventListener('message',onMessage);window.clearTimeout(timeoutId);};
+
+    // Use a unique isolated iframe per request to eliminate concurrency collisions
+    const iframeId='apiFrame_'+requestId;
+    const iframe=document.createElement('iframe');
+    iframe.name=iframeId;
+    iframe.id=iframeId;
+    iframe.style.display='none';
+    document.body.appendChild(iframe);
+
+    const cleanup=()=>{
+      window.removeEventListener('message',onMessage);
+      window.clearTimeout(timeoutId);
+      setTimeout(()=>{
+        try{iframe.remove();}catch(e){}
+      },500);
+    };
+
     const onMessage=(event)=>{
-      // The reply comes from a nested Google iframe (not apiFrame itself), so event.source
-      // can never equal frame.contentWindow. The random requestId is what authenticates it.
       const message=event.data;
       if(!message||message.type!=='MYSTER_POST_RESPONSE'||message.requestId!==requestId)return;
       finished=true;cleanup();
@@ -141,11 +184,11 @@ function api(action,data,testSessionToken) {
     window.addEventListener('message',onMessage);
     timeoutId=window.setTimeout(()=>{
       if(finished)return;finished=true;cleanup();
-      reject(new Error('Tiada respons daripada Apps Script dalam 30 saat. Semak deployment Web App dan versi Code.gs.'));
+      reject(new Error('Tiada respons daripada Apps Script dalam 30 saat. Semak sambungan internet dan status Web App.'));
     },30000);
 
     const form=document.createElement('form');
-    form.method='POST';form.action=apiUrl;form.target='apiFrame';form.style.display='none';
+    form.method='POST';form.action=apiUrl;form.target=iframeId;form.style.display='none';
     const field=document.createElement('input');
     field.type='hidden';field.name='payload';field.value=JSON.stringify(payload);
     form.appendChild(field);document.body.appendChild(form);
@@ -164,7 +207,6 @@ async function loadAdminDashboard() {
     renderAdminStats();
     renderAdminClasses();
     renderAdminUsers();
-    await loadRolePreviewConfig();
     show('#adminLoading',false);
     show('#adminContent',true);
     if(selectedAdminClassId) renderSelectedAdminClass();
@@ -356,6 +398,7 @@ document.querySelectorAll('[data-admin-tab]').forEach(btn=>{
     document.querySelectorAll('.admin-tab-panel').forEach(x=>x.classList.add('hidden'));
     $('#admin-panel-'+btn.dataset.adminTab).classList.remove('hidden');
     if(btn.dataset.adminTab==='data') loadAdminDataTable();
+    if(btn.dataset.adminTab==='preview' && !roleMatrixData) loadRolePreviewConfig();
   });
 });
 $('#adminDataLoad')?.addEventListener('click',loadAdminDataTable);
@@ -1027,3 +1070,16 @@ async function logoutMySemester(){
 $('#logoutBtn').addEventListener('click',logoutMySemester);
 $('#logoutBtnStudent').addEventListener('click',logoutMySemester);
 $('#refreshAdminBtn').addEventListener('click',loadAdminDashboard);
+$('#clearCacheBtn')?.addEventListener('click',async()=>{
+  const btn=$('#clearCacheBtn');
+  btn.disabled=true;btn.textContent='Mengosongkan...';
+  try {
+    const r=await api('clearCache',{});
+    showToast(r.message||'Cache berjaya dikosongkan.');
+    await loadAdminDashboard();
+  } catch(err) {
+    showToast('Gagal mengosongkan cache: '+err.message,true);
+  } finally {
+    btn.disabled=false;btn.textContent='Kosongkan cache';
+  }
+});
