@@ -586,19 +586,22 @@
              ============================================================= -->
         <section id="panel-preview" class="app-panel hidden">
           <section id="roleLabWorkspace" class="role-lab panel hidden" aria-labelledby="roleLabTitle">
-            <div class="role-lab-heading">
-              <div class="role-lab-heading-copy">
+            <details id="roleLabSessionDetails" class="role-lab-session">
+              <summary>
                 <span class="role-lab-kicker"><span class="role-lab-live-dot"></span> SIMULATED ROLE WORKSPACE</span>
-                <h2 id="roleLabTitle">Dashboard peranan</h2>
+                <span class="role-lab-summary-title"><strong id="roleLabTitle">Dashboard peranan</strong><span id="roleLabRolePill" class="role-lab-role-pill"></span></span>
+                <span class="role-lab-details-toggle">Butiran sesi</span>
+              </summary>
+              <div class="role-lab-session-body">
                 <p id="roleLabDescription"></p>
                 <div class="role-lab-session-meta"><span id="previewInfo"></span><small id="previewAccountId"></small></div>
+                <div class="role-lab-heading-actions">
+                  <span class="role-lab-sandbox-pill">SANDBOX</span>
+                  <label class="role-lab-switch">Tukar peranan<select id="previewRoleSwitch"></select></label>
+                  <button id="exitPreviewBtn" class="btn role-lab-exit-btn" type="button">Tamatkan sesi ujian</button>
+                </div>
               </div>
-              <div class="role-lab-heading-actions">
-                <div class="role-lab-status"><span class="role-lab-sandbox-pill">SANDBOX</span><span id="roleLabRolePill" class="role-lab-role-pill"></span></div>
-                <label class="role-lab-switch">Tukar peranan<select id="previewRoleSwitch"></select></label>
-                <button id="exitPreviewBtn" class="btn role-lab-exit-btn" type="button">Tamatkan sesi ujian</button>
-              </div>
-            </div>
+            </details>
             <div id="roleLabStats" class="role-lab-stats"></div>
             <nav id="roleLabNav" class="role-lab-nav" aria-label="Menu ruang kerja peranan"></nav>
             <div id="roleLabContent" class="role-lab-content"></div>
