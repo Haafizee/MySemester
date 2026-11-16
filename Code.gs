@@ -41,7 +41,7 @@ const APP = {
     PersonalNotes:['note_id','user_id','semester_id','semester_subject_id','title','content','created_at','updated_at'],
     AuditLogs:['log_id','user_id','action','entity_type','entity_id','old_data_json','new_data_json','created_at'],
     PermissionMatrix:['role','permission_id','enabled','updated_by','updated_at'],
-    RoleTestSessions:['session_id','token_hash','admin_user_id','class_id','role','test_user_id','test_email','status','expires_at','created_at','closed_at'],
+    RoleTestSessions:['session_id','token_hash','admin_user_id','class_id','role','test_user_id','test_email','status','expires_at','created_at','closed_at','sandbox_enabled'],
     RoleTestAccounts:['test_user_id','session_id','admin_user_id','class_id','role','display_name','email','status','created_at','expires_at'],
     RoleTestData:['session_id','sheet_name','operation','record_id','row_json','patch_json','created_at'],
     RoleTestAudit:['audit_id','session_id','admin_user_id','test_user_id','role','action','entity_type','entity_id','result','created_at']
@@ -252,7 +252,8 @@ function route_(req) {
     TEST_CONTEXT_ = {
       sessionId:session.session_id, adminUserId:session.admin_user_id,
       classId:session.class_id, role:session.role, testUserId:session.test_user_id,
-      testEmail:session.test_email
+      testEmail:session.test_email,
+      sandboxEnabled:session.sandbox_enabled===undefined?true:toBool_(session.sandbox_enabled)
     };
     user.userId = session.test_user_id;
     user.email = session.test_email;
@@ -308,6 +309,7 @@ function dispatchAction_(u, action, d) {
     case 'saveRoleMatrix': return saveRoleMatrix_(u,d);
     case 'startRoleTest': return startRoleTest_(u,d);
     case 'stopRoleTest': return stopRoleTest_(u,d);
+    case 'setRoleTestSandbox': return setRoleTestSandbox_(u,d);
     case 'roleTestStatus': return roleTestStatus_(u,d);
     case 'listRoleTestSessions': return listRoleTestSessions_(u,d);
     case 'clearRoleTestData': return clearRoleTestData_(u,d);
@@ -476,7 +478,7 @@ function requireSystemAdmin_(u) {
 
 function ensureExtendedSheets_() {
   const cache = CacheService.getScriptCache();
-  if (cache.get('EXTENDED_SHEETS_READY') === '1') return;
+  if (cache.get('EXTENDED_SHEETS_READY_V2') === '1') return;
 
   const spreadsheet=ss_();
   ['PermissionMatrix','RoleTestSessions','RoleTestAccounts','RoleTestData','RoleTestAudit'].forEach(name=>{
@@ -492,7 +494,19 @@ function ensureExtendedSheets_() {
       sh.setFrozenRows(1);
     }
   });
-  try { cache.put('EXTENDED_SHEETS_READY', '1', 21600); } catch(e){}
+  const sessionSheet=spreadsheet.getSheetByName('RoleTestSessions');
+  const sessionHeaders=sessionSheet.getRange(1,1,1,sessionSheet.getLastColumn()).getValues()[0].map(String);
+  APP.SHEETS.RoleTestSessions.forEach(header=>{
+    if(sessionHeaders.indexOf(header)<0) {
+      const column=sessionSheet.getLastColumn()+1;
+      sessionSheet.getRange(1,column).setValue(header);
+      if(header==='sandbox_enabled' && sessionSheet.getLastRow()>1) {
+        sessionSheet.getRange(2,column,sessionSheet.getLastRow()-1,1).setValue(true);
+      }
+    }
+  });
+  invalidateRowsCache_('RoleTestSessions');
+  try { cache.put('EXTENDED_SHEETS_READY_V2', '1', 21600); } catch(e){}
 }
 
 function ensureRolePermissionMatrix_() {
@@ -667,6 +681,47 @@ function enforceActionPermission_(u, action, d) {
     if (role==='admin') role='class_admin';
   }
   if (!roleHasPermission_(role,permissionId)) throw new Error('Permission denied by active role matrix: '+permissionId+' ('+role+'). Check this permission and its parent permissions.');
+  if(role==='lecturer') {
+    const semesterSubjectId=lecturerActionSubjectId_(action,d);
+    if(semesterSubjectId) requireLecturerScheduleSubject_(user.userId,semesterSubjectId);
+  }
+}
+
+function lecturerActionSubjectId_(action,d) {
+  if(['createScheduleSession','createAssignment','createResourceLink'].includes(action)) return d.semesterSubjectId||'';
+  if(['updateSchedule','verifySchedule','deleteSchedule'].includes(action)) {
+    return findBy_('ClassSessions','session_id',d.sessionId)?.semester_subject_id||'';
+  }
+  if(['updateAssignment','deleteAssignment','recordAssignmentMark'].includes(action)) {
+    return findBy_('Assignments','assignment_id',d.assignmentId)?.semester_subject_id||'';
+  }
+  if(['updateResource','deleteResource'].includes(action)) {
+    return findBy_('Resources','resource_id',d.resourceId)?.semester_subject_id||'';
+  }
+  if(action==='createCalendarEvent') return d.semesterSubjectId||'';
+  if(action==='updateCalendarEvent') return findBy_('CalendarEvents','event_id',d.eventId)?.semester_subject_id||'';
+  return '';
+}
+
+function lecturerScheduleSubjectIds_(userId) {
+  const semesters=getRows_('Semesters');
+  const semesterById=Object.fromEntries(semesters.map(x=>[x.semester_id,x]));
+  const subjects=getRows_('SemesterSubjects').filter(x=>{
+    const semester=semesterById[x.semester_id];
+    if(!semester||!x.semester_subject_id) return false;
+    if(TEST_CONTEXT_ && TEST_CONTEXT_.role==='lecturer') return semester.class_id===TEST_CONTEXT_.classId;
+    return x.lecturer_user_id===userId && getRows_('ClassMembers').some(m=>
+      m.user_id===userId&&m.class_id===semester.class_id&&m.membership_status==='active'&&String(m.member_role).toLowerCase()==='lecturer');
+  });
+  const scheduledIds=new Set(getRows_('ClassSessions').filter(x=>x.status!=='cancelled').map(x=>x.semester_subject_id));
+  getRows_('ScheduleSeries').filter(x=>x.status!=='cancelled').forEach(x=>scheduledIds.add(x.semester_subject_id));
+  return subjects.filter(x=>scheduledIds.has(x.semester_subject_id)).map(x=>x.semester_subject_id);
+}
+
+function requireLecturerScheduleSubject_(userId,semesterSubjectId) {
+  if(!lecturerScheduleSubjectIds_(userId).includes(semesterSubjectId)) {
+    throw new Error('Pensyarah hanya boleh mengurus subjek yang ditugaskan kepadanya dan mempunyai jadual aktif.');
+  }
 }
 
 function startRoleTest_(u,d) {
@@ -681,13 +736,13 @@ function startRoleTest_(u,d) {
   const token=Utilities.getUuid().replace(/-/g,'')+Utilities.getUuid().replace(/-/g,'');
   const expires=new Date(Date.now()+4*60*60*1000);
   const expiresAt=Utilities.formatDate(expires,APP.TZ,"yyyy-MM-dd'T'HH:mm:ss");
-  append_('RoleTestSessions',[sid,sha256_(token),u.userId,classId,role,testUserId,testEmail,'active',expiresAt,now_(),'']);
+  append_('RoleTestSessions',[sid,sha256_(token),u.userId,classId,role,testUserId,testEmail,'active',expiresAt,now_(),'',true]);
   append_('RoleTestAccounts',[testUserId,sid,u.userId,classId,role,'MySemester Test '+role.toUpperCase(),testEmail,'active',now_(),expiresAt]);
   append_('RoleTestAudit',[id_('RTA'),sid,u.userId,testUserId,role,'START_TEST_SESSION','RoleTestSessions',sid,'SUCCESS',now_()]);
   audit_(u.userId,'START_ROLE_TEST','RoleTestSessions',sid,null,{classId:classId,role:role,testUserId:testUserId});
   return {ok:true,sessionId:sid,testSessionToken:token,classId:classId,role:role,
     testUser:{id:testUserId,email:testEmail,name:'MySemester Test '+role.toUpperCase()},
-    expiresAt:expiresAt,message:'Akaun ujian sementara diwujudkan. Semua perubahan disimpan dalam sandbox ujian sahaja.'};
+    expiresAt:expiresAt,sandboxEnabled:true,message:'Akaun ujian sementara diwujudkan. Semua perubahan disimpan dalam sandbox ujian sahaja.'};
 }
 
 function getRoleTestSessionByToken_(token,adminUserId) {
@@ -700,6 +755,19 @@ function getRoleTestSessionByToken_(token,adminUserId) {
     throw new Error('Temporary test account has expired. Start a new role test.');
   }
   return session;
+}
+
+function setRoleTestSandbox_(u,d) {
+  requireSystemAdmin_(u);
+  const session=getRows_('RoleTestSessions').find(x=>x.session_id===d.sessionId && x.admin_user_id===u.userId && x.status==='active');
+  if(!session) throw new Error('Active test session not found.');
+  if(typeof d.sandboxEnabled!=='boolean') throw new Error('Sandbox mode must be enabled or disabled.');
+  updateById_('RoleTestSessions','session_id',session.session_id,{sandbox_enabled:d.sandboxEnabled});
+  append_('RoleTestAudit',[id_('RTA'),session.session_id,u.userId,session.test_user_id,session.role,
+    d.sandboxEnabled?'ENABLE_SANDBOX':'DISABLE_SANDBOX','RoleTestSessions',session.session_id,'SUCCESS',now_()]);
+  audit_(u.userId,d.sandboxEnabled?'ENABLE_ROLE_TEST_SANDBOX':'DISABLE_ROLE_TEST_SANDBOX',
+    'RoleTestSessions',session.session_id,{sandbox_enabled:toBool_(session.sandbox_enabled)},{sandbox_enabled:d.sandboxEnabled});
+  return {ok:true,sandboxEnabled:d.sandboxEnabled,message:d.sandboxEnabled?'Sandbox diaktifkan.':'Mod terus-simpan diaktifkan.'};
 }
 
 function stopRoleTest_(u,d) {
@@ -922,11 +990,16 @@ function roleTestContext_(u,d) {
   const semesters=allSemesters.filter(x=>x.class_id===classId);
   const semesterIds=semesters.map(x=>x.semester_id);
   const semesterSubjects=getRows_('SemesterSubjects').filter(x=>semesterIds.includes(x.semester_id));
-  const subjectIds=semesterSubjects.map(x=>x.subject_id);
+  const lecturerSubjectIds=TEST_CONTEXT_.role==='lecturer'?lecturerScheduleSubjectIds_(TEST_CONTEXT_.testUserId):null;
+  const visibleSemesterSubjects=lecturerSubjectIds
+    ?semesterSubjects.filter(x=>lecturerSubjectIds.includes(x.semester_subject_id))
+    :semesterSubjects;
+  const subjectIds=visibleSemesterSubjects.map(x=>x.subject_id);
   const subjects=getRows_('Subjects').filter(x=>subjectIds.includes(x.subject_id));
-  const ssIds=semesterSubjects.map(x=>x.semester_subject_id);
+  const ssIds=visibleSemesterSubjects.map(x=>x.semester_subject_id);
   const allAssignments=getRows_('Assignments');
   const classSessions=getRows_('ClassSessions');
+  const scheduleSeries=getRows_('ScheduleSeries');
   const allResources=getRows_('Resources');
   const allEvents=getRows_('CalendarEvents');
   const can=pid=>roleHasPermission_(TEST_CONTEXT_.role,pid);
@@ -940,14 +1013,18 @@ function roleTestContext_(u,d) {
       membersView:can('members.view'),reportsView:can('reports.view')
     },
     semesters:can('semester.view')?semesters:[],
-    semesterSubjects:can('semester.view')?semesterSubjects:[],
+    semesterSubjects:can('semester.view')?visibleSemesterSubjects:[],
     subjects:can('semester.view')?subjects:[],
     sessions:can('schedule.view')?classSessions.filter(x=>ssIds.includes(x.semester_subject_id)):[],
+    scheduleSeries:can('schedule.view')?scheduleSeries.filter(x=>ssIds.includes(x.semester_subject_id)):[],
     assignments:can('pb.view')?allAssignments.filter(x=>ssIds.includes(x.semester_subject_id)):[],
     resources:can('resources.view')?allResources.filter(x=>ssIds.includes(x.semester_subject_id) && x.visibility!=='personal' && x.visibility!=='archived'):[],
-    calendarEvents:can('calendar.view')?allEvents.filter(x=>semesterIds.includes(x.semester_id) && x.visibility!=='personal' && x.visibility!=='archived'):[],
+    calendarEvents:can('calendar.view')?allEvents.filter(x=>semesterIds.includes(x.semester_id) &&
+      x.visibility!=='personal' && x.visibility!=='archived' &&
+      (!x.semester_subject_id||ssIds.includes(x.semester_subject_id))):[],
     members:members,ownProgress:progress,
     auditLogs:getRows_('RoleTestAudit').filter(x=>x.session_id===sessionId).slice(-50).reverse(),
+    sandboxEnabled:TEST_CONTEXT_.sandboxEnabled,
     sandboxOperations:getRows_('RoleTestData').filter(x=>x.session_id===sessionId).length};
 }
 
@@ -1164,7 +1241,8 @@ function bootstrap_(u) {
         return {
           semesterSubjectId:ss.semester_subject_id,semesterId:ss.semester_id,
           subjectId:ss.subject_id,subjectCode:subject.subject_code||'',
-          subjectName:subject.subject_name||'',lecturerUserId:ss.lecturer_user_id||''
+          subjectName:subject.subject_name||'',lecturerUserId:ss.lecturer_user_id||'',
+          subjectColor:ss.subject_color||''
         };
       }) : []
     };
@@ -1330,8 +1408,11 @@ function listSchedules_(u,d) {
   const semester=findBy_('Semesters','semester_id',d.semesterId);
   if (!semester || semester.class_id!==d.classId) throw new Error('Semester not found in this class.');
   const ssIds=getRows_('SemesterSubjects').filter(x=>x.semester_id===d.semesterId).map(x=>x.semester_subject_id);
-  const rows=getRows_('ClassSessions').filter(x=>ssIds.includes(x.semester_subject_id));
-  return {ok:true,items:rows};
+  const allowedIds=String(getRows_('ClassMembers').find(x=>x.user_id===u.userId&&x.class_id===d.classId&&x.membership_status==='active')?.member_role||'').toLowerCase()==='lecturer'
+    ?lecturerScheduleSubjectIds_(u.userId):ssIds;
+  const rows=getRows_('ClassSessions').filter(x=>allowedIds.includes(x.semester_subject_id)&&ssIds.includes(x.semester_subject_id));
+  const series=getRows_('ScheduleSeries').filter(x=>allowedIds.includes(x.semester_subject_id)&&ssIds.includes(x.semester_subject_id));
+  return {ok:true,items:rows,series:series};
 }
 
 function createScheduleSession_(u,d) {
@@ -1390,7 +1471,9 @@ function listAssignments_(u,d) {
   const semester=findBy_('Semesters','semester_id',d.semesterId);
   if (!semester || semester.class_id!==d.classId) throw new Error('Semester not found in this class.');
   const ssIds=getRows_('SemesterSubjects').filter(x=>x.semester_id===d.semesterId).map(x=>x.semester_subject_id);
-  const items=getRows_('Assignments').filter(x=>ssIds.includes(x.semester_subject_id) && x.status!=='cancelled');
+  const role=String(getRows_('ClassMembers').find(x=>x.user_id===u.userId&&x.class_id===d.classId&&x.membership_status==='active')?.member_role||'').toLowerCase();
+  const allowedIds=role==='lecturer'?lecturerScheduleSubjectIds_(u.userId):ssIds;
+  const items=getRows_('Assignments').filter(x=>allowedIds.includes(x.semester_subject_id)&&ssIds.includes(x.semester_subject_id) && x.status!=='cancelled');
   const assignmentIds=items.map(x=>x.assignment_id);
   const progress=getRows_('StudentAssignmentProgress')
     .filter(x=>x.user_id===u.userId && assignmentIds.includes(x.assignment_id));
@@ -1431,6 +1514,8 @@ function listResources_(u,d) {
   const semesterSubject=findBy_('SemesterSubjects','semester_subject_id',d.semesterSubjectId);
   const semester=semesterSubject&&findBy_('Semesters','semester_id',semesterSubject.semester_id);
   if (!semester || semester.class_id!==d.classId) throw new Error('Subject not found in this class.');
+  const member=getRows_('ClassMembers').find(x=>x.user_id===u.userId&&x.class_id===d.classId&&x.membership_status==='active');
+  if(String(member?.member_role||'').toLowerCase()==='lecturer') requireLecturerScheduleSubject_(u.userId,d.semesterSubjectId);
   const rows=getRows_('Resources').filter(r=>r.semester_subject_id===d.semesterSubjectId && r.visibility!=='personal' && r.visibility!=='archived');
   return {ok:true,items:rows};
 }
@@ -1439,8 +1524,11 @@ function listCalendarEvents_(u,d) {
   requireClassMember_(u.userId,d.classId);
   const semester=findBy_('Semesters','semester_id',d.semesterId);
   if (!semester || semester.class_id!==d.classId) throw new Error('Semester not found in this class.');
+  const member=getRows_('ClassMembers').find(x=>x.user_id===u.userId&&x.class_id===d.classId&&x.membership_status==='active');
+  const allowedIds=String(member?.member_role||'').toLowerCase()==='lecturer'?lecturerScheduleSubjectIds_(u.userId):null;
   const items=getRows_('CalendarEvents')
-    .filter(x=>x.semester_id===d.semesterId && x.visibility!=='personal' && x.visibility!=='archived');
+    .filter(x=>x.semester_id===d.semesterId && x.visibility!=='personal' && x.visibility!=='archived' &&
+      (!allowedIds||!x.semester_subject_id||allowedIds.includes(x.semester_subject_id)));
   return {ok:true,items:items};
 }
 
@@ -1529,14 +1617,16 @@ function getRows_(name){
   const overlaySheets=['RoleTestData','RoleTestSessions','RoleTestAccounts','RoleTestAudit'];
   if(TEST_CONTEXT_ && overlaySheets.indexOf(name)<0 && name!=='PermissionMatrix') {
     const headers=APP.SHEETS[name]||[];
-    rawRows_('RoleTestData').filter(x=>x.session_id===TEST_CONTEXT_.sessionId && x.sheet_name===name).forEach(op=>{
-      if(op.operation==='APPEND') {
-        try { const arr=JSON.parse(op.row_json||'[]'); const obj={}; headers.forEach((h,i)=>obj[h]=arr[i]===undefined?'':arr[i]); rows.push(obj); } catch(e) {}
-      } else if(op.operation==='PATCH') {
-        const target=rows.find(r=>String(r[headers[0]])===String(op.record_id));
-        if(target) { try { Object.assign(target,JSON.parse(op.patch_json||'{}')); } catch(e) {} }
-      }
-    });
+    if(TEST_CONTEXT_.sandboxEnabled) {
+      rawRows_('RoleTestData').filter(x=>x.session_id===TEST_CONTEXT_.sessionId && x.sheet_name===name).forEach(op=>{
+        if(op.operation==='APPEND') {
+          try { const arr=JSON.parse(op.row_json||'[]'); const obj={}; headers.forEach((h,i)=>obj[h]=arr[i]===undefined?'':arr[i]); rows.push(obj); } catch(e) {}
+        } else if(op.operation==='PATCH') {
+          const target=rows.find(r=>String(r[headers[0]])===String(op.record_id));
+          if(target) { try { Object.assign(target,JSON.parse(op.patch_json||'{}')); } catch(e) {} }
+        }
+      });
+    }
     if(name==='ClassMembers') {
       rows.push({
         membership_id:'TESTMEM_'+TEST_CONTEXT_.sessionId,class_id:TEST_CONTEXT_.classId,
@@ -1568,7 +1658,7 @@ function getRows_(name){
   return rows;
 }
 function append_(name,row){
-  if(TEST_CONTEXT_ && ['RoleTestData','RoleTestSessions','RoleTestAccounts','RoleTestAudit','PermissionMatrix'].indexOf(name)<0) {
+  if(TEST_CONTEXT_ && TEST_CONTEXT_.sandboxEnabled && ['RoleTestData','RoleTestSessions','RoleTestAccounts','RoleTestAudit','PermissionMatrix'].indexOf(name)<0) {
     appendRaw_('RoleTestData',[TEST_CONTEXT_.sessionId,name,'APPEND',String(row[0]||''),JSON.stringify(row),'',now_()]);
     invalidateRowsCache_(name);
     return;
@@ -1578,7 +1668,7 @@ function append_(name,row){
 function appendRaw_(name,row){ss_().getSheetByName(name).appendRow(row);invalidateRowsCache_(name);}
 function findBy_(name,key,value){return getRows_(name).find(r=>String(r[key])===String(value))||null;}
 function updateById_(name,key,id,patch){
-  if(TEST_CONTEXT_ && ['RoleTestData','RoleTestSessions','RoleTestAccounts','RoleTestAudit','PermissionMatrix'].indexOf(name)<0) {
+  if(TEST_CONTEXT_ && TEST_CONTEXT_.sandboxEnabled && ['RoleTestData','RoleTestSessions','RoleTestAccounts','RoleTestAudit','PermissionMatrix'].indexOf(name)<0) {
     const existing=getRows_(name).find(r=>String(r[key])===String(id));
     if(!existing) throw new Error('Record not found in '+name);
     appendRaw_('RoleTestData',[TEST_CONTEXT_.sessionId,name,'PATCH',String(id),'',JSON.stringify(patch),now_()]);

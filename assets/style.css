@@ -1525,6 +1525,16 @@ tr:hover td {
   border-top: 1px solid #e8eef5;
 }
 
+.role-lab-live-pill {
+  color: #a63d22;
+  background: #fff0eb;
+}
+
+.role-lab-heading-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .role-lab-session-body > p {
   grid-column: 1 / -1;
   margin: 0;
@@ -1739,6 +1749,20 @@ tr:hover td {
   font-size: 12px;
 }
 
+.subject-resource-group {
+  margin-top: 14px;
+}
+
+.subject-resource-group > h3,
+.subject-resource-group > h4 {
+  margin: 0 0 8px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #e8eef5;
+  color: #315779;
+  font-size: 12px;
+  font-weight: 750;
+}
+
 .role-lab-search {
   width: min(100%, 220px);
 }
@@ -1778,6 +1802,218 @@ tr:hover td {
 .role-lab-table-wrap {
   max-height: 340px;
   overflow: auto;
+}
+
+.google-calendar {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dfe7f1;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.google-calendar-toolbar,
+.google-calendar-navigation,
+.google-calendar-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.google-calendar-toolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 10px;
+  border-bottom: 1px solid #e6edf5;
+}
+
+.google-calendar-navigation > strong {
+  margin-left: 5px;
+  color: #173b65;
+  font-size: 13px;
+}
+
+.google-calendar-filters input,
+.google-calendar-filters select {
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid #cbd8e8;
+  border-radius: 7px;
+  color: var(--text);
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+}
+
+.google-calendar-filters label:first-child {
+  width: min(190px, 30vw);
+}
+
+.google-calendar-filters label:last-child {
+  width: min(180px, 30vw);
+}
+
+.google-calendar-scroll {
+  max-height: 610px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.google-calendar-head,
+.google-calendar-all-day,
+.google-calendar-time-grid {
+  display: grid;
+  min-width: 900px;
+  grid-template-columns: 58px repeat(7, minmax(112px, 1fr));
+}
+
+.google-calendar-head {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  background: #fff;
+}
+
+.google-calendar-day-head {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-bottom: 1px solid #e6edf5;
+  border-left: 1px solid #edf1f6;
+  color: #65768a;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.google-calendar-day-head strong {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 50%;
+  color: #173b65;
+  font-size: 12px;
+}
+
+.google-calendar-time-label {
+  position: sticky;
+  z-index: 2;
+  left: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 5px 2px 0;
+  color: #78889a;
+  background: #fff;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.google-calendar-all-day {
+  position: sticky;
+  z-index: 3;
+  top: 52px;
+  min-height: 26px;
+  border-bottom: 1px solid #e6edf5;
+  background: #fff;
+}
+
+.google-calendar-all-day-cell {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-height: 26px;
+  padding: 2px;
+  border-left: 1px solid #edf1f6;
+}
+
+.google-calendar-all-day-cell span,
+.google-calendar-all-day-cell small {
+  overflow: hidden;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: #315779;
+  background: #edf4fc;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.google-calendar-time-grid {
+  position: relative;
+}
+
+.google-calendar-hour-labels {
+  position: sticky;
+  z-index: 2;
+  left: 0;
+  display: grid;
+  grid-auto-rows: 60px;
+  background: #fff;
+}
+
+.google-calendar-hour-labels > span {
+  position: relative;
+  top: -7px;
+  padding-right: 5px;
+  color: #78889a;
+  font-size: 9px;
+  text-align: right;
+}
+
+.google-calendar-day-column {
+  position: relative;
+  border-left: 1px solid #edf1f6;
+  background: repeating-linear-gradient(to bottom, #fff 0, #fff 59px, #e8eef5 59px, #e8eef5 60px);
+}
+
+.google-calendar-event {
+  position: absolute;
+  right: 2px;
+  left: 2px;
+  z-index: 1;
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  overflow: hidden;
+  padding: 4px 5px;
+  border-left: 3px solid var(--event-color, #6b9de4);
+  border-radius: 4px;
+  color: #173b65;
+  background: #f0f6ff;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.google-calendar-event-note {
+  border-left-color: #9a7bc0;
+  background: #f6f1fc;
+}
+
+.google-calendar-event > strong,
+.google-calendar-event > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.google-calendar-event > strong {
+  font-size: 10px;
+}
+
+.google-calendar-event > small {
+  color: #52677e;
+  font-size: 9px;
+}
+
+.google-calendar-empty {
+  padding: 10px;
+  border-top: 1px solid #edf1f6;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
 }
 
 .role-lab-chip {
@@ -2181,6 +2417,25 @@ tr:hover td {
   .role-lab-pagination {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .google-calendar-toolbar,
+  .google-calendar-navigation,
+  .google-calendar-filters {
+    width: 100%;
+  }
+
+  .google-calendar-filters label:first-child {
+    width: auto;
+    flex: 1;
+  }
+
+  .google-calendar-filters label:last-child {
+    width: min(45%, 180px);
+  }
+
+  .role-lab-heading-actions {
+    justify-content: flex-start;
   }
 
   .role-lab-record-actions {

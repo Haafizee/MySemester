@@ -596,7 +596,8 @@
                 <p id="roleLabDescription"></p>
                 <div class="role-lab-session-meta"><span id="previewInfo"></span><small id="previewAccountId"></small></div>
                 <div class="role-lab-heading-actions">
-                  <span class="role-lab-sandbox-pill">SANDBOX</span>
+                  <span id="roleLabSandboxState" class="role-lab-sandbox-pill">SANDBOX</span>
+                  <button id="roleLabSandboxToggleBtn" class="btn btn-light btn-small" type="button">Matikan sandbox</button>
                   <label class="role-lab-switch">Tukar peranan<select id="previewRoleSwitch"></select></label>
                   <button id="exitPreviewBtn" class="btn role-lab-exit-btn" type="button">Tamatkan sesi ujian</button>
                 </div>
@@ -612,7 +613,7 @@
               </div>
               <div id="roleLabAudit" class="test-audit muted small">Belum ada aktiviti.</div>
             </section>
-            <div class="role-lab-footer"><span>🧪 Perubahan disimpan dalam sandbox sesi ujian ini.</span><button id="roleLabRefreshBtn" type="button" class="btn btn-light btn-small">Muat semula data</button></div>
+            <div class="role-lab-footer"><span id="roleLabWriteModeHint">Perubahan disimpan dalam sandbox sesi ujian ini.</span><button id="roleLabRefreshBtn" type="button" class="btn btn-light btn-small">Muat semula data</button></div>
           </section>
 
           <section class="role-test-panel panel" id="admin-panel-preview" aria-labelledby="roleTestTitle">
