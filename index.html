@@ -433,52 +433,70 @@
              PANEL 2: PENGURUSAN KELAS
              ============================================================= -->
         <section id="panel-classes" class="app-panel hidden">
-          <div class="admin-grid">
-            <section class="panel">
-              <h2>Cipta kelas baharu</h2>
-              <p class="muted">Daftarkan kohort atau kumpulan kelas yang akan menggunakan MySemester.</p>
+          <div class="class-admin-heading">
+            <div><span class="eyebrow">PENTADBIRAN AKADEMIK</span><h2>Pengurusan Kelas</h2>
+              <p class="muted">Urus kelas, tetapkan bilangan semester dan konfigurasi ahli melalui panel ringkas.</p></div>
+            <details class="class-create-details">
+              <summary class="btn">＋ Cipta kelas</summary>
               <form id="createClassForm" class="form-stack">
                 <label>Nama kelas <input id="newClassName" required placeholder="Contoh: Diploma Teknologi Maklumat - Sesi 2026"></label>
-                <label>Program <input id="newClassProgramme" placeholder="Contoh: Diploma Teknologi Maklumat"></label>
-                <label>Institusi <input id="newClassInstitution" placeholder="Contoh: Institut Pendidikan Guru"></label>
-                <label>Kohort / Sesi <input id="newClassCohort" placeholder="Contoh: Ambilan 2026"></label>
+                <div class="two-fields"><label>Program <input id="newClassProgramme" placeholder="Contoh: Diploma Teknologi Maklumat"></label>
+                  <label>Kohort / Sesi <input id="newClassCohort" placeholder="Contoh: Ambilan 2026"></label></div>
+                <div class="two-fields"><label>Institusi <input id="newClassInstitution" placeholder="Contoh: Institut Pendidikan Guru"></label>
+                  <label>Bilangan semester
+                    <input id="newClassSemesterLimit" type="number" min="1" step="1" required value="3">
+                    <small class="muted">Bilangan ini menjadi had semester untuk kelas tersebut.</small>
+                  </label></div>
                 <label>Penerangan <textarea id="newClassDescription" rows="2" placeholder="Penerangan ringkas kelas"></textarea></label>
                 <button class="btn" type="submit">Cipta kelas</button>
                 <div id="createClassMessage" class="small form-message" aria-live="polite"></div>
               </form>
-            </section>
-            <section class="panel">
-              <div class="section-heading">
-                <div><h2>Senarai kelas berdaftar</h2><p class="muted">Semua kohort yang didaftarkan dalam sistem.</p></div>
-              </div>
-              <div class="table-wrap">
-                <table><thead><tr><th>Kelas</th><th>Kod</th><th>Status</th><th>Semester</th><th>Ahli</th><th></th></tr></thead><tbody id="adminClassList"></tbody></table>
-              </div>
-            </section>
+            </details>
           </div>
+          <section class="panel class-list-panel">
+            <div class="section-heading">
+              <div><h2>Kelas berdaftar</h2><p class="muted">Pilih kelas untuk mengurus semester, akses dan pensyarah.</p></div>
+              <label class="class-list-search"><span class="sr-only">Cari kelas</span><input id="adminClassSearch" type="search" placeholder="Cari nama, kod atau kohort"></label>
+            </div>
+            <div class="table-wrap">
+              <table><thead><tr><th>Kelas</th><th>Kod</th><th>Status</th><th>Semester</th><th>Ahli</th><th></th></tr></thead><tbody id="adminClassList"></tbody></table>
+            </div>
+            <div class="table-pagination" id="adminClassPagination">
+              <span id="adminClassPageInfo" class="muted small"></span>
+              <div><button id="adminClassPrevPage" class="btn btn-light btn-small" type="button">Sebelum</button>
+                <button id="adminClassNextPage" class="btn btn-light btn-small" type="button">Seterusnya</button></div>
+            </div>
+          </section>
 
           <!-- Selected Class Detail Area -->
           <section id="adminClassDetail" class="panel hidden">
             <div class="section-heading">
-              <div><span class="eyebrow">PENGURUSAN KELAS DIPILIH</span><h2 id="selectedClassTitle">Kelas</h2><p id="selectedClassMeta" class="muted"></p></div>
-              <button id="previewThisClassBtn" class="btn btn-light btn-small" type="button">🔍 Pratonton kelas ini</button>
+              <div><span class="eyebrow">KELAS DIPILIH</span><h2 id="selectedClassTitle">Kelas</h2><p id="selectedClassMeta" class="muted"></p></div>
+              <div class="class-detail-actions"><span id="selectedClassSemesterProgress" class="class-semester-progress"></span>
+                <button id="previewThisClassBtn" class="btn btn-light btn-small" type="button">Pratonton</button></div>
             </div>
-            <div class="admin-grid">
-              <div>
-                <h3>Semester</h3>
+            <div class="class-management-sections">
+              <details class="class-management-section">
+                <summary><span>Semester</span><span id="semesterSectionSummary" class="muted small"></span></summary>
+                <div class="class-management-section-body">
                 <div id="semesterList" class="semester-list"></div>
-                <form id="createSemesterForm" class="form-stack compact-form">
-                  <h3>Tambah semester</h3>
-                  <label>Nama semester <input id="semesterName" required placeholder="Semester 1"></label>
-                  <label>Sesi akademik <input id="semesterSession" placeholder="2026/2027"></label>
-                  <label>Nombor semester <input id="semesterNumber" type="number" min="1" max="15" required value="1"></label>
-                  <div class="two-fields"><label>Tarikh mula <input id="semesterStart" type="date"></label><label>Tarikh tamat <input id="semesterEnd" type="date"></label></div>
-                  <button class="btn" type="submit">Tambah semester</button>
-                  <div id="semesterMessage" class="small form-message"></div>
-                </form>
+                <details id="createSemesterDetails" class="class-subform-details">
+                  <summary>＋ Tambah semester</summary>
+                  <form id="createSemesterForm" class="form-stack compact-form">
+                    <label>Nama semester <input id="semesterName" required placeholder="Semester 1"></label>
+                    <div class="two-fields"><label>Sesi akademik <input id="semesterSession" placeholder="2026/2027"></label>
+                      <label>Nombor semester <input id="semesterNumber" type="number" min="1" required value="1"></label></div>
+                    <div class="two-fields"><label>Tarikh mula <input id="semesterStart" type="date"></label><label>Tarikh tamat <input id="semesterEnd" type="date"></label></div>
+                    <button class="btn" type="submit">Simpan semester</button>
+                    <div id="semesterMessage" class="small form-message"></div>
+                  </form>
+                </details>
                 <div class="activate-box"><button id="activateClassBtn" class="btn btn-secondary" disabled>Aktifkan kelas</button><p id="activateClassHint" class="muted small"></p></div>
-              </div>
-              <div>
+                </div>
+              </details>
+              <details class="class-management-section">
+                <summary><span>Akses dan peranan kelas</span><span class="muted small">Jemputan · KO · PIC · Pelajar</span></summary>
+                <div class="class-management-section-body">
                 <form id="createInviteForm" class="form-stack compact-form">
                   <h3>Kod jemputan kelas</h3>
                   <p class="muted small">Kod hanya boleh dijana selepas kelas diaktifkan.</p>
@@ -497,7 +515,11 @@
                   <button class="btn btn-light" type="submit">Tetapkan peranan</button>
                   <div id="assignRoleMessage" class="small form-message"></div>
                 </form>
-                <section class="lecturer-registration">
+                </div>
+              </details>
+              <details class="class-management-section">
+                <summary><span>Direktori pensyarah</span><span class="muted small">Pra-daftar dan pautkan akaun</span></summary>
+                <div class="class-management-section-body">
                   <h3>Pra-daftar pensyarah</h3>
                   <p class="muted small">Daftarkan nama dan emel Google dahulu. Pensyarah melengkapkan pautan apabila log masuk menggunakan emel tersebut.</p>
                   <form id="registerLecturerForm" class="form-stack compact-form">
@@ -507,8 +529,8 @@
                     <div id="lecturerRegistrationMessage" class="small form-message" aria-live="polite"></div>
                   </form>
                   <div id="lecturerDirectoryList" class="lecturer-directory-list"></div>
-                </section>
-              </div>
+                </div>
+              </details>
             </div>
           </section>
         </section>
@@ -825,8 +847,8 @@
             <h2>Aliran Kerja &amp; Panduan Pentadbir</h2>
             <ol class="admin-guide">
               <li><strong>Cipta kelas:</strong> Daftarkan kohort atau kumpulan pelajar bagi sesi semasa.</li>
-              <li><strong>Tambah 3 hingga 15 semester:</strong> Susun struktur tempoh akademik.</li>
-              <li><strong>Aktifkan kelas:</strong> Kelas boleh diaktifkan selepas sekurang-kurangnya tiga semester direkodkan.</li>
+              <li><strong>Tetapkan bilangan semester:</strong> Pilih had ketika mencipta kelas, kemudian tambah semester bernombor mengikut turutan.</li>
+              <li><strong>Aktifkan kelas:</strong> Kelas boleh diaktifkan selepas semua semester hingga had yang ditetapkan direkodkan.</li>
               <li><strong>Jana kod jemputan:</strong> Salin kod untuk diedarkan kepada pelajar bagi kemasukan kelas pantas.</li>
               <li><strong>Pra-daftar pensyarah:</strong> Simpan nama dan emel Google; pautan akaun dibuat apabila pensyarah log masuk.</li>
               <li><strong>Cipta tawaran dan jadual subjek:</strong> KO/Class Admin atau pensyarah tetapkan kumpulan, pensyarah dan PIC sebelum menyediakan jadual.</li>

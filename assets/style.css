@@ -1019,6 +1019,168 @@ html, body {
   margin-bottom: 14px;
 }
 
+.class-admin-heading {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 4px 2px;
+}
+
+.class-admin-heading h2 {
+  margin: 3px 0 2px;
+  font-size: 22px;
+}
+
+.class-admin-heading p {
+  margin: 0;
+}
+
+.class-create-details {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.class-create-details > summary,
+.class-management-section > summary,
+.class-subform-details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.class-create-details > summary::-webkit-details-marker,
+.class-management-section > summary::-webkit-details-marker,
+.class-subform-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.class-create-details[open] {
+  position: absolute;
+  z-index: 8;
+  top: 0;
+  right: 0;
+  width: min(460px, calc(100vw - 40px));
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  box-shadow: var(--shadow-lg);
+}
+
+.class-create-details[open] > summary {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 10px;
+  border: 0;
+  padding: 0;
+  color: var(--primary);
+  background: transparent;
+  box-shadow: none;
+}
+
+.class-list-panel {
+  padding: 16px 18px;
+}
+
+.class-list-search {
+  width: min(320px, 42%);
+}
+
+.class-list-search input {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.table-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.table-pagination > div {
+  display: flex;
+  gap: 7px;
+}
+
+.class-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.class-semester-progress {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.class-management-sections {
+  display: grid;
+  gap: 10px;
+}
+
+.class-management-section {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.class-management-section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 15px;
+  font-weight: 750;
+}
+
+.class-management-section > summary::after {
+  content: "+";
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.class-management-section[open] > summary::after {
+  content: "−";
+}
+
+.class-management-section-body {
+  display: grid;
+  gap: 14px;
+  padding: 0 15px 15px;
+}
+
+.class-subform-details {
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+}
+
+.class-subform-details > summary {
+  color: var(--primary);
+  font-size: 12.5px;
+  font-weight: 750;
+}
+
+.class-subform-details[open] > summary {
+  margin-bottom: 12px;
+}
+
+.class-management-section .form-stack h3,
+.class-management-section-body > h3 {
+  margin: 0;
+}
+
 .eyebrow {
   font-size: 10px;
   font-weight: 800;
@@ -1362,6 +1524,38 @@ tr:hover td {
 @media (max-width: 768px) {
   :root {
     --header-h: 56px;
+  }
+
+  .class-admin-heading {
+    align-items: flex-start;
+  }
+  .class-admin-heading h2 {
+    font-size: 19px;
+  }
+  .class-create-details[open] {
+    right: 0;
+    width: min(460px, calc(100vw - 32px));
+  }
+  .class-list-panel {
+    padding: 14px;
+  }
+  .class-list-panel .section-heading {
+    flex-direction: column;
+  }
+  .class-list-search {
+    width: 100%;
+  }
+  .table-pagination {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .class-detail-actions {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .class-management-section > summary {
+    align-items: flex-start;
   }
 
   .subject-offering-form {

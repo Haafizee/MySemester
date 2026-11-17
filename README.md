@@ -1,5 +1,15 @@
 # MySemester
 
+## Pengurusan kelas dan semester
+
+System Admin menetapkan bilangan semester ketika mencipta kelas. Bilangan itu disimpan pada `Classes.semester_limit`, menjadi had ketika semester ditambah, dan kelas hanya boleh diaktifkan selepas semua nombor semester daripada 1 hingga had tersebut diwujudkan. Tiada had tetap 15 semester. Kelas sedia ada dimigrasikan secara automatik dengan had sekurang-kurangnya tiga, bilangan rekod semester sedia ada atau nombor semester tertinggi—yang mana lebih besar.
+
+Dalam Pengurusan Kelas, borang cipta kelas berada di panel boleh buka/tutup; semester, akses/peranan dan direktori pensyarah diurus dalam bahagian boleh sorok mengikut kelas. Gunakan carian senarai kelas untuk menapis nama, kod, program atau kohort.
+
+## Akaun pembangunan dan simulasi peranan
+
+Akaun development yang boleh log masuk ialah `devadmin`; rekod demo pelajar, PIC, KO dan pensyarah ialah identiti simulasi dalam Makmal Peranan, bukan akaun dengan kata laluan berasingan. Untuk menetapkan kata laluan dev, simpan sementara `DEV_LOGIN_PASSWORD` (minimum 12 aksara) dalam Apps Script Script Properties, jalankan `hashDevelopmentPasswordProperty()`, kemudian log masuk sebagai `devadmin`. Helper menyimpan hash dan memadam nilai plaintext. Gunakan Makmal Peranan untuk menguji akaun demo.
+
 ## Aliran pensyarah, tawaran subjek dan pilihan pelajar
 
 1. System Admin mendaftarkan nama dan emel Google pensyarah dalam Pengurusan Kelas. Akaun Google yang aktif dipautkan serta-merta; jika belum pernah log masuk, ia kekal berstatus `pending` sehingga pemilik emel yang disahkan log masuk. Tiada emel jemputan dihantar oleh sistem.

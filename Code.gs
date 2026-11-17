@@ -15,7 +15,7 @@ const APP = {
     Users:['user_id','google_sub','email','full_name','photo_url','account_status','created_at','last_login'],
     Roles:['role_id','role_name','description'],
     UserRoles:['user_role_id','user_id','role_id','class_id','semester_id','assigned_by','created_at'],
-    Classes:['class_id','class_name','class_code','programme','institution','cohort','description','created_by','status','created_at'],
+    Classes:['class_id','class_name','class_code','programme','institution','cohort','description','created_by','status','created_at','semester_limit'],
     ClassMembers:['membership_id','class_id','user_id','member_role','membership_status','joined_at','approved_by'],
     ClassInvitations:['invitation_id','class_id','invite_code','expires_at','max_uses','uses_count','status','created_by','created_at'],
     Semesters:['semester_id','class_id','semester_name','academic_session','semester_number','start_date','end_date','status','created_at'],
@@ -499,7 +499,7 @@ function requireSystemAdmin_(u) {
 
 function ensureExtendedSheets_() {
   const cache = CacheService.getScriptCache();
-  if (cache.get('EXTENDED_SHEETS_READY_V4') === '1') return;
+  if (cache.get('EXTENDED_SHEETS_READY_V5') === '1') return;
 
   const spreadsheet=ss_();
   ['PermissionMatrix','RoleTestSessions','RoleTestAccounts','RoleTestData','RoleTestAudit','LecturerDirectory','StudentSemesterSubjects'].forEach(name=>{
@@ -515,19 +515,35 @@ function ensureExtendedSheets_() {
       sh.setFrozenRows(1);
     }
   });
-  [['RoleTestSessions','sandbox_enabled'],['SemesterSubjects','pic_user_id'],['SemesterSubjects','offering_name']].forEach(([name,header])=>{
+  [['RoleTestSessions','sandbox_enabled'],['SemesterSubjects','pic_user_id'],['SemesterSubjects','offering_name'],
+    ['Classes','semester_limit']].forEach(([name,header])=>{
     const sheet=spreadsheet.getSheetByName(name);
     const headers=sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(String);
-    if(headers.indexOf(header)<0) {
-      const column=sheet.getLastColumn()+1;
+    let column=headers.indexOf(header)+1;
+    if(column===0) {
+      column=sheet.getLastColumn()+1;
       sheet.getRange(1,column).setValue(header);
       if(name==='RoleTestSessions' && sheet.getLastRow()>1) {
         sheet.getRange(2,column,sheet.getLastRow()-1,1).setValue(true);
       }
+      column=sheet.getLastColumn();
+      invalidateRowsCache_(name);
+    }
+    if(name==='Classes' && sheet.getLastRow()>1) {
+      const classRows=getRows_('Classes');
+      const semesterRows=getRows_('Semesters');
+      const limits=classRows.map(row=>{
+        const existing=Number(row.semester_limit);
+        if(Number.isSafeInteger(existing)&&existing>=1) return existing;
+        const classSemesters=semesterRows.filter(semester=>semester.class_id===row.class_id);
+        const highestNumber=classSemesters.reduce((highest,semester)=>Math.max(highest,Number(semester.semester_number)||0),0);
+        return Math.max(3,classSemesters.length,highestNumber);
+      });
+      sheet.getRange(2,column,limits.length,1).setValues(limits.map(limit=>[limit]));
     }
     invalidateRowsCache_(name);
   });
-  try { cache.put('EXTENDED_SHEETS_READY_V4', '1', 21600); } catch(e){}
+  try { cache.put('EXTENDED_SHEETS_READY_V5', '1', 21600); } catch(e){}
 }
 
 function ensureRolePermissionMatrix_() {
@@ -1422,6 +1438,8 @@ function adminDashboard_(u) {
       classId:c.class_id,className:c.class_name,classCode:c.class_code,
       programme:c.programme,institution:c.institution,cohort:c.cohort,
       description:c.description,status:c.status,createdAt:c.created_at,
+      semesterLimit:Number.isSafeInteger(Number(c.semester_limit))&&Number(c.semester_limit)>=1
+        ?Number(c.semester_limit):Math.max(3,semesters.length),
       semesterCount:semesters.length,memberCount:members.length,activeInviteCount:invites.length,
       lecturers:lecturerDirectory.filter(item=>item.class_id===c.class_id).map(item=>({
         registrationId:item.registration_id,fullName:item.full_name,email:item.email,
@@ -1576,30 +1594,50 @@ function joinClass_(u,d) {
 function createClass_(u,d) {
   requireRole_(u.userId,['admin']);
   const name = required_(d.className,'Class name');
+  const semesterLimit=Number(d.semesterLimit);
+  if(!Number.isSafeInteger(semesterLimit)||semesterLimit<1) throw new Error('Tetapkan bilangan semester yang sah (sekurang-kurangnya 1).');
   const classId=id_('CLS'), code=(d.classCode || randomCode_()).toUpperCase();
   if (findBy_('Classes','class_code',code)) throw new Error('Class code already exists.');
-  append_('Classes',[classId,name,code,d.programme||'',d.institution||'',d.cohort||'',d.description||'',u.userId,'draft',now_()]);
+  append_('Classes',[classId,name,code,d.programme||'',d.institution||'',d.cohort||'',d.description||'',u.userId,'draft',now_(),semesterLimit]);
   append_('ClassMembers',[id_('MEM'),classId,u.userId,'admin','active',now_(),u.userId]);
-  audit_(u.userId,'CREATE_CLASS','Classes',classId,null,{name:name,code:code});
-  return {ok:true,classId:classId,classCode:code};
+  audit_(u.userId,'CREATE_CLASS','Classes',classId,null,{name:name,code:code,semesterLimit:semesterLimit});
+  return {ok:true,classId:classId,classCode:code,semesterLimit:semesterLimit};
 }
 
 function activateClass_(u,d) {
   requireClassRole_(u.userId,d.classId,['admin']);
-  const count=getRows_('Semesters').filter(s=>s.class_id===d.classId).length;
-  if (count < 3 || count > 15) throw new Error('A class must have between 3 and 15 semesters before activation.');
+  const classRow=findBy_('Classes','class_id',d.classId);
+  if(!classRow) throw new Error('Class not found.');
+  const semesters=getRows_('Semesters').filter(s=>s.class_id===d.classId);
+  const count=semesters.length;
+  const limit=Number(classRow.semester_limit)||3;
+  const semesterNumbers=semesters.map(semester=>Number(semester.semester_number));
+  const completeSequence=count===limit&&new Set(semesterNumbers).size===limit&&
+    semesterNumbers.every(number=>Number.isInteger(number)&&number>=1&&number<=limit);
+  if(!completeSequence) throw new Error('Kelas perlu mempunyai semester bernombor 1 hingga '+limit+' sebelum diaktifkan (kini '+count+').');
   updateById_('Classes','class_id',d.classId,{status:'active'});
-  audit_(u.userId,'ACTIVATE_CLASS','Classes',d.classId,null,{semesterCount:count});
+  audit_(u.userId,'ACTIVATE_CLASS','Classes',d.classId,null,{semesterCount:count,semesterLimit:limit});
   return {ok:true,message:'Class activated.'};
 }
 
 function createSemester_(u,d) {
   requireClassRole_(u.userId,d.classId,['admin','ko']);
+  const classRow=findBy_('Classes','class_id',required_(d.classId,'Class'));
+  if(!classRow) throw new Error('Class not found.');
   const semesters=getRows_('Semesters').filter(s=>s.class_id===d.classId);
-  if (semesters.length >= 15) throw new Error('A class may have a maximum of 15 semesters.');
-  if (semesters.length < 0) throw new Error('Invalid semester count.');
+  const limit=Number(classRow.semester_limit)||3;
+  if(semesters.length>=limit) throw new Error('Had semester kelas telah dicapai ('+limit+').');
+  const existingNumbers=new Set(semesters.map(semester=>Number(semester.semester_number)));
+  let nextSemesterNumber=1;
+  while(existingNumbers.has(nextSemesterNumber)&&nextSemesterNumber<=limit) nextSemesterNumber++;
+  const semesterNumber=d.semesterNumber===undefined||d.semesterNumber===null||d.semesterNumber===''
+    ?nextSemesterNumber:Number(d.semesterNumber);
+  if(!Number.isSafeInteger(semesterNumber)||semesterNumber<1||semesterNumber>limit) {
+    throw new Error('Nombor semester mesti antara 1 hingga '+limit+'.');
+  }
+  if(semesterNumber!==nextSemesterNumber) throw new Error('Tambah semester mengikut turutan. Nombor seterusnya ialah '+nextSemesterNumber+'.');
   const semId=id_('SEM');
-  append_('Semesters',[semId,d.classId,required_(d.semesterName,'Semester name'),d.academicSession||'',Number(d.semesterNumber||semesters.length+1),d.startDate||'',d.endDate||'','upcoming',now_()]);
+  append_('Semesters',[semId,d.classId,required_(d.semesterName,'Semester name'),d.academicSession||'',semesterNumber,d.startDate||'',d.endDate||'','upcoming',now_()]);
   audit_(u.userId,'CREATE_SEMESTER','Semesters',semId,null,d);
   return {ok:true,semesterId:semId};
 }
@@ -1914,7 +1952,7 @@ function invalidateRowsCache_(name) {
     try {
       const keys=Object.keys(APP.SHEETS).map(n=>CACHE_PREFIX_+n);
       keys.push('EXTENDED_SHEETS_READY','EXTENDED_SHEETS_READY_V3','EXTENDED_SHEETS_READY_V4',
-        'ROLE_MATRIX_READY','ROLE_MATRIX_READY_V2');
+        'EXTENDED_SHEETS_READY_V5','ROLE_MATRIX_READY','ROLE_MATRIX_READY_V2');
       cache.removeAll(keys);
     } catch(e){}
   }
@@ -2100,7 +2138,7 @@ function seedDevelopmentDemoData() {
     append_('UserRoles',[id_('UR'),adminId,'ROLE_ADMIN','','','DEVELOPMENT_SEED',now]);
 
   if(!findBy_('Classes','class_id',classId))
-    append_('Classes',[classId,'Kohort Demo MySemester 2026','DEMO26','Diploma Teknologi Maklumat','Institut Demo','Ambilan 2026','Dataset demonstrasi pembangunan',adminId,'active',now]);
+    append_('Classes',[classId,'Kohort Demo MySemester 2026','DEMO26','Diploma Teknologi Maklumat','Institut Demo','Ambilan 2026','Dataset demonstrasi pembangunan',adminId,'active',now,3]);
 
   const semesterRows=[];
   for(let i=1;i<=3;i++) semesterRows.push([`DEMO_SEM_${i}`,classId,`Semester ${i}`,'2026/2027',i,`2026-0${i*2}-01`,`2026-${String(i*2+1).padStart(2,'0')}-30`,'active',now]);

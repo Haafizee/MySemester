@@ -1057,16 +1057,28 @@ function renderAdminStats() {
   renderOverviewDashboard();
 }
 function renderAdminClasses() {
-  const classes=adminData.classes||[];
-  $('#adminClassList').innerHTML=classes.length?classes.map(c=>`
+  const query=($('#adminClassSearch')?.value||'').trim().toLowerCase();
+  const classes=(adminData.classes||[]).filter(c=>
+    [c.className,c.classCode,c.programme,c.cohort].some(value=>String(value||'').toLowerCase().includes(query)));
+  const pageSize=8;
+  const pageCount=Math.max(1,Math.ceil(classes.length/pageSize));
+  adminClassPage=Math.min(adminClassPage,pageCount);
+  const visibleClasses=classes.slice((adminClassPage-1)*pageSize,adminClassPage*pageSize);
+  $('#adminClassList').innerHTML=classes.length?visibleClasses.map(c=>`
     <tr>
       <td><strong>${escapeHtml(c.className)}</strong><small>${escapeHtml(c.programme||'')} ${escapeHtml(c.cohort||'')}</small></td>
       <td><code>${escapeHtml(c.classCode)}</code></td>
       <td><span class="status ${c.status==='active'?'active':'draft'}">${escapeHtml(c.status)}</span></td>
-      <td>${c.semesterCount}/15</td><td>${c.memberCount}</td>
+      <td>${c.semesterCount}/${c.semesterLimit}</td><td>${c.memberCount}</td>
       <td><button class="btn btn-small btn-light" data-manage-class="${escapeHtml(c.classId)}">Urus</button></td>
-    </tr>`).join(''):'<tr><td colspan="6" class="muted">Belum ada kelas. Cipta kelas pertama.</td></tr>';
+    </tr>`).join(''):`<tr><td colspan="6" class="muted">${query?'Tiada kelas sepadan dengan carian.':'Belum ada kelas. Cipta kelas pertama.'}</td></tr>`;
+  const first=classes.length?(adminClassPage-1)*pageSize+1:0;
+  const last=Math.min(adminClassPage*pageSize,classes.length);
+  $('#adminClassPageInfo').textContent=`${first}–${last} daripada ${classes.length} kelas`;
+  $('#adminClassPrevPage').disabled=adminClassPage<=1;
+  $('#adminClassNextPage').disabled=adminClassPage>=pageCount;
 }
+let adminClassPage=1;
 function renderAdminUsers() {
   const users=adminData.users||[];
   $('#adminUserList').innerHTML=users.length?users.map(u=>`
@@ -1147,13 +1159,29 @@ function renderSelectedAdminClass() {
   show('#adminClassDetail',true);
   $('#selectedClassTitle').textContent=c.className;
   $('#selectedClassMeta').textContent=`${c.classCode} • ${c.status} • ${c.memberCount} ahli`;
+  const semesterLimit=Number(c.semesterLimit)||3;
+  const semesterCount=Number(c.semesterCount)||0;
+  const semesterNumbers=new Set((c.semesters||[]).map(s=>Number(s.semesterNumber)));
+  let nextSemesterNumber=1;
+  while(semesterNumbers.has(nextSemesterNumber)&&nextSemesterNumber<=semesterLimit) nextSemesterNumber++;
+  const allSemestersReady=semesterCount===semesterLimit&&semesterNumbers.size===semesterLimit&&
+    Array.from(semesterNumbers).every(number=>Number.isInteger(number)&&number>=1&&number<=semesterLimit);
+  $('#selectedClassSemesterProgress').textContent=`${semesterCount} / ${semesterLimit} semester`;
+  $('#semesterSectionSummary').textContent=`${semesterCount} daripada ${semesterLimit}`;
   $('#semesterList').innerHTML=(c.semesters||[]).map(s=>`
     <div class="semester-row"><div><strong>${escapeHtml(s.semesterName)}</strong>
     <small>${escapeHtml(s.academicSession||'')} • Semester ${escapeHtml(s.semesterNumber)}</small></div>
     <span class="status ${s.status==='active'?'active':'draft'}">${escapeHtml(s.status)}</span></div>`).join('')||'<p class="muted">Belum ada semester.</p>';
-  const canActivate=c.semesterCount>=3&&c.semesterCount<=15&&c.status!=='active';
+  const canActivate=allSemestersReady&&c.status!=='active';
   $('#activateClassBtn').disabled=!canActivate;
-  $('#activateClassHint').textContent=c.status==='active'?'Kelas telah diaktifkan.':`Perlu sekurang-kurangnya 3 semester sebelum diaktifkan (${c.semesterCount}/3).`;
+  $('#activateClassHint').textContent=c.status==='active'?'Kelas telah diaktifkan.':
+    `Lengkapkan semester 1 hingga ${semesterLimit} untuk mengaktifkan kelas (${semesterCount}/${semesterLimit}).`;
+  $('#semesterNumber').max=String(semesterLimit);
+  $('#semesterNumber').value=String(Math.min(nextSemesterNumber,semesterLimit));
+  $('#semesterNumber').disabled=semesterCount>=semesterLimit;
+  if(semesterCount>=semesterLimit) $('#createSemesterDetails').open=false;
+  $('#createSemesterForm button[type="submit"]').disabled=semesterCount>=semesterLimit;
+  if(semesterCount>=semesterLimit) $('#semesterMessage').textContent=`Had ${semesterLimit} semester telah dicapai.`;
   $('#createInviteBtn').disabled=c.status!=='active';
   $('#lecturerDirectoryList').innerHTML=(c.lecturers||[]).map(lecturer=>`
     <div class="lecturer-directory-row"><div><strong>${escapeHtml(lecturer.fullName)}</strong><small>${escapeHtml(lecturer.email)}</small></div>
@@ -1170,16 +1198,20 @@ $('#createClassForm').addEventListener('submit',async e=>{
     programme:$('#newClassProgramme').value.trim(),
     institution:$('#newClassInstitution').value.trim(),
     cohort:$('#newClassCohort').value.trim(),
-    description:$('#newClassDescription').value.trim()
+    description:$('#newClassDescription').value.trim(),
+    semesterLimit:Number($('#newClassSemesterLimit').value)
   };
   $('#createClassMessage').textContent='Mencipta kelas...';
   try {
     const r=await api('createClass',data);
-    $('#createClassMessage').textContent=`Kelas berjaya dicipta. Kod kelas: ${r.classCode}. Tambah sekurang-kurangnya 3 semester.`;
+    $('#createClassMessage').textContent=`Kelas berjaya dicipta. Kod kelas: ${r.classCode}. Tambah ${r.semesterLimit} semester untuk mengaktifkannya.`;
     e.target.reset();await refreshAdmin();
     selectedAdminClassId=r.classId;renderSelectedAdminClass();
   } catch(err){$('#createClassMessage').textContent=err.message;}
 });
+$('#adminClassSearch')?.addEventListener('input',()=>{adminClassPage=1;renderAdminClasses();});
+$('#adminClassPrevPage')?.addEventListener('click',()=>{adminClassPage=Math.max(1,adminClassPage-1);renderAdminClasses();});
+$('#adminClassNextPage')?.addEventListener('click',()=>{adminClassPage++;renderAdminClasses();});
 $('#adminClassList').addEventListener('click',e=>{
   const b=e.target.closest('[data-manage-class]');
   if(!b)return;
@@ -1190,7 +1222,7 @@ $('#createSemesterForm').addEventListener('submit',async e=>{
   e.preventDefault();
   if(!selectedAdminClassId)return;
   const c=selectedClass();
-  if(c&&c.semesterCount>=15){$('#semesterMessage').textContent='Had maksimum 15 semester telah dicapai.';return;}
+  if(c&&c.semesterCount>=c.semesterLimit){$('#semesterMessage').textContent=`Had ${c.semesterLimit} semester telah dicapai.`;return;}
   const data={
     classId:selectedAdminClassId,
     semesterName:$('#semesterName').value.trim(),
@@ -1611,7 +1643,7 @@ function renderRoleLabWorkspace() {
       <section class="role-lab-card role-lab-wide"><div class="role-lab-card-head"><div><h3>Pemetaan kelas → subjek → pensyarah</h3><p class="muted small">${escapeHtml(currentClass?.className||'Kelas aktif')} · ${escapeHtml(semester?.semesterName||'Semester')}</p></div><span class="muted small">${ss.length} subjek</span></div>${assignStaff?`<p class="muted small">Tetapkan pensyarah dan PIC untuk setiap subjek semester. PB, nota dan sumber hanya tersedia kepada pelajar selepas pemetaan staf dan jadual lengkap.</p><form id="roleLabSubjectLinkForm" class="role-lab-form"><label>Tambah subjek sedia ada<select name="subjectId" required>${(ctx.availableSubjects||[]).filter(subject=>!ss.some(link=>link.subject_id===subject.subject_id)).map(subject=>`<option value="${escapeHtml(subject.subject_id)}">${escapeHtml([subject.subject_code,subject.subject_name].filter(Boolean).join(' · '))}</option>`).join('')||'<option value="">Tiada subjek tersedia untuk dipautkan</option>'}</select></label><button class="btn btn-light" type="submit" ${(ctx.availableSubjects||[]).every(subject=>ss.some(link=>link.subject_id===subject.subject_id))?'disabled':''}>Pautkan kepada semester</button></form>`:''}<div class="table-wrap role-lab-table-wrap"><table><thead><tr><th>Kod</th><th>Subjek</th><th>Pensyarah</th><th>PIC subjek</th><th>PB</th><th>Status pelajar</th>${assignStaff?'<th></th>':''}</tr></thead><tbody>${subjectTable}</tbody></table></div>${listRecords.dashboard.pagination}</section>
       <section class="role-lab-card"><h3>Tarikh penting seterusnya</h3>${upcoming.map(x=>`<div class="role-lab-list-row"><div><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.type)}</small></div><time>${escapeHtml(x.date)}</time></div>`).join('')||'<p class="muted small">Tiada tarikh akan datang direkodkan.</p>'}</section>
       <section class="role-lab-card"><h3>Status ruang kerja</h3><div class="role-lab-summary"><span>Peranan aktif</span><b>${escapeHtml(roleLabRoleLabel(role))}</b></div><div class="role-lab-summary"><span>PB aktif</span><b>${assignments.length}</b></div><div class="role-lab-summary"><span>Ahli kelas</span><b>${members.length}</b></div><p class="muted small">Data kelas dipaparkan bersama perubahan sandbox sesi ini.</p></section>
-      ${roleLabAllowed('semester.manage')?`<section class="role-lab-card"><h3>Tambah semester</h3><form id="roleLabSemesterForm" class="role-lab-form"><label>Nama semester<input name="semesterName" required placeholder="Contoh: Semester 2"></label><label>Sesi akademik<input name="academicSession" placeholder="2026/2027"></label><label>Nombor semester<input name="semesterNumber" type="number" min="1" max="15" value="${semesters.length+1}"></label><label>Tarikh mula<input name="startDate" type="date"></label><label>Tarikh tamat<input name="endDate" type="date"></label><div class="btn-row"><button class="btn" type="submit">Cipta semester</button><span class="small form-message" id="roleLabSemesterMessage"></span></div></form></section>`:''}
+      ${roleLabAllowed('semester.manage')?`<section class="role-lab-card"><h3>Tambah semester</h3><p class="muted small">Had kelas: ${Number(currentClass?.semesterLimit)||3} semester.</p><form id="roleLabSemesterForm" class="role-lab-form"><label>Nama semester<input name="semesterName" required placeholder="Contoh: Semester 2"></label><label>Sesi akademik<input name="academicSession" placeholder="2026/2027"></label><label>Nombor semester<input name="semesterNumber" type="number" min="1" max="${Number(currentClass?.semesterLimit)||3}" value="${semesters.length+1}" ${semesters.length>=(Number(currentClass?.semesterLimit)||3)?'disabled':''}></label><label>Tarikh mula<input name="startDate" type="date"></label><label>Tarikh tamat<input name="endDate" type="date"></label><div class="btn-row"><button class="btn" type="submit" ${semesters.length>=(Number(currentClass?.semesterLimit)||3)?'disabled':''}>Cipta semester</button><span class="small form-message" id="roleLabSemesterMessage"></span></div></form></section>`:''}
       ${roleLabAllowed('class.activate')?`<section class="role-lab-card"><h3>Status kelas</h3><p class="muted small">Uji proses pengaktifan kelas menggunakan akaun sementara.</p><button class="btn" data-role-action="activate-class">Aktifkan kelas ujian</button></section>`:''}
       ${roleLabAllowed('notifications.manage')?`<section class="role-lab-card"><h3>Hebahan kelas</h3><form id="roleLabNotificationForm" class="role-lab-form"><label>Tajuk<input name="title" required></label><label>Mesej<textarea name="message" required rows="3"></textarea></label><div class="btn-row"><button class="btn" type="submit">Hantar hebahan ujian</button><span id="roleLabNotificationMessage" class="small form-message"></span></div></form></section>`:''}
     </div>`;
